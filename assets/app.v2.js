@@ -2387,6 +2387,11 @@ if (ST.cardOpen) {
       if (ST.__answered) restoreAnswered();
       /* 记住停在哪，供「今日 → 立即刷题」接着做 */
       if (ST.list && ST.list.length) A.saveLast();
+      /* 第一次进刷题：教一下手势/键位 */
+      if (ST.list && ST.list.length && !(A.DB.tipSeen & 1)) {
+        A.DB.tipSeen = (A.DB.tipSeen || 0) | 1; A.save();
+        setTimeout(function () { A.toast("左右滑动切题；电脑上 ←→ 切题、1-4 选答案、空格看答案"); }, 700);
+      }
     }
     hookSearch();
     if (window.renderMathInElement) { /* katex 已经嵌在 md 里 */ }
@@ -3233,6 +3238,33 @@ if (ST.cardOpen) {
       }
     } catch (e) { }
   }
+
+  /* ---------- 手势与快捷键：手机左右滑动切题，电脑用键盘 ---------- */
+  function drillActive() {
+    try { return currentView().id === "drill"; } catch (e) { return false; }
+  }
+  function clickIf(sel) {
+    var e = document.querySelector(sel);
+    if (e && !e.disabled) { e.click(); return true; }
+    return false;
+  }
+
+  var tX = 0, tY = 0, tT = 0;
+  document.addEventListener("touchstart", function (e) {
+    if (!drillActive() || !e.touches || e.touches.length !== 1) return;
+    tX = e.touches[0].clientX; tY = e.touches[0].clientY; tT = Date.now();
+  }, { passive: true });
+  document.addEventListener("touchend", function (e) {
+    if (!drillActive()) return;
+    var t = e.changedTouches && e.changedTouches[0];
+    if (!t) return;
+    var dx = t.clientX - tX, dy = t.clientY - tY, dt = Date.now() - tT;
+    if (dt > 900 || Math.abs(dx) < 70 || Math.abs(dy) > 55) return;
+    /* 从屏幕边缘起手多半是系统返回手势，放过 */
+    if (dx > 0 && tX < 24) return;
+    if (dx < 0) clickIf('[data-act="next"]');
+    else clickIf('[data-act="prev"]');
+  }, { passive: true });
 
   A.boot = boot;
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
