@@ -494,6 +494,41 @@
   A.SCHOOLS = SCHOOLS; A.schoolOf = schoolOf; A.GUETPROB = GUETPROB;
   A.SUBJ = SUBJ; A.KPMAP = KPMAP; A.KPLIST = KPLIST; A.LESSONS = LESSONS; A.LESSON_MAP = LESSON_MAP;
 
+  /* 某考点的历年真题（只对上大有考点标注的有效） */
+  function examByKp(kp, limit) {
+    var out = [];
+    (EPROB || []).forEach(function (p, i) {
+      if ((p.kp || []).indexOf(kp) >= 0) out.push({ i: i, p: p });
+    });
+    out.sort(function (a, b) { return Number(b.p.year) - Number(a.p.year); });
+    return out.slice(0, limit || 4);
+  }
+  A.examByKp = examByKp;
+
+  /* 读图专项：两个院校里所有「电路」真题，全部带原卷图 */
+  var FIGLIST = null;
+  function figList() {
+    if (FIGLIST) return FIGLIST;
+    var out = [];
+    ["shu", "guet"].forEach(function (sid) {
+      var sch = schoolOf(sid);
+      (sch.list || []).forEach(function (p) {
+        var part = String(p.part || "");
+        if (part.indexOf("电路") < 0) return;
+        if (!p.page) return;
+        out.push({ sid: sid, sch: sch, p: p });
+      });
+    });
+    out.sort(function (a, b) {
+      if (a.sid !== b.sid) return a.sid === "shu" ? -1 : 1;   /* 先上大，再桂电 */
+      if (Number(b.p.year) !== Number(a.p.year)) return Number(b.p.year) - Number(a.p.year);
+      return String(a.p.no || "").localeCompare(String(b.p.no || ""));
+    });
+    FIGLIST = out;
+    return out;
+  }
+  A.figList = figList;
+
   /* 考点 ↔ 讲义 */
   var KP_LESSON = window.KP_LESSON || {};
   var LESSON_KPS = {};
@@ -1095,6 +1130,28 @@
         if (!lid || !A.LESSON_MAP[lid]) return "";
         return '<button class="fblink" data-act="gotolesson" data-v="' + esc(lid) + '">看本考点讲义 ›</button>';
       })() + "</div>";
+    /* 同考点的真题：练习题做完就能看到真实的原卷（带电路图） */
+    (function () {
+      var ks = q.kp || [], hits = [], seen = {};
+      ks.forEach(function (k) {
+        (A.examByKp(k, 3) || []).forEach(function (x) {
+          if (seen[x.p.id]) return;
+          seen[x.p.id] = 1; hits.push(x);
+        });
+      });
+      if (!hits.length) return;
+      hits.sort(function (a, b) { return Number(b.p.year) - Number(a.p.year); });
+      h += '<div class="fb-sec"><div class="fb-h"><i>🧾</i>同考点真题 · 原卷带图</div><div class="exlist">';
+      hits.slice(0, 3).forEach(function (x) {
+        h += '<button class="exrow" data-act="open-exam" data-s="shu" data-v="' + x.i + '">' +
+          "<b>" + esc(String(x.p.year)) + "</b>" +
+          '<span class="exno">' + esc(x.p.no || "") + "</span>" +
+          '<span class="exbrief tiny muted">' + esc(A.lead(A.plain(x.p.brief || ""), 20)) + "</span></button>";
+      });
+      h += '</div><div class="tiny muted">点开是当年卷子的扫描页，电路图就在卷面上。</div></div>';
+      h += '<div class="row" style="margin:2px 0 10px"><button class="btn ghost sm" data-act="figdrill">⚡ 去「读图专项」练带图的电路题</button></div>';
+    })();
+
     h += '<div class="grade3">';
     G3.forEach(function (x) {
       h += '<button class="gbtn ' + x.cls + '" data-act="grade" data-g="' + x.g + '" title="' + esc(x.tip) + '">' +
@@ -1418,6 +1475,8 @@ if (ST.cardOpen) {
 
     h += '<div class="card examhead">';
     h += schoolChips();
+    h += '<div class="row" style="margin-top:8px"><button class="btn ghost sm" data-act="figdrill">⚡ 读图专项 · 带图的电路真题（' +
+      (A.figList() || []).length + " 道）</button></div>";
 
     if (!sch.ready) {
       h += '<div class="muted tiny" style="margin-top:10px">' + esc(sch.name) +
@@ -1578,6 +1637,43 @@ if (ST.cardOpen) {
     return h;
   }
   A.vExamOne = vExamOne;
+
+  /* ---------- 读图专项：只看带原卷图的电路真题 ---------- */
+  function vFigDrill(idx) {
+    var list = A.figList();
+    if (!list.length) return '<div class="empty">还没有可用的电路真题。</div>';
+    var i = Math.max(0, Math.min(list.length - 1, A.num(idx, 0)));
+    var x = list[i], p = x.p, sch = x.sch;
+    var f = A.pageImg(sch.imgdir, p.page);
+    var h = '<div class="row" style="margin-bottom:10px;gap:8px">' +
+      '<button class="btn ghost sm" data-act="figdrill-close">‹ 退出</button>' +
+      '<span class="tiny muted figprog" style="margin-left:auto">读图专项 · 第 ' + (i + 1) + " / " + list.length + " 题</span></div>";
+    h += '<div class="card">';
+    h += '<div class="qtop"><span class="tag y">' + esc(sch.short) + " · " + esc(String(p.year)) + " 年 " + esc(p.no || "") + "</span>" +
+      '<span class="tag cir">' + esc(p.part || "电路") + "</span>" +
+      (p.points ? '<span class="tag">' + p.points + " 分</span>" : "") + "</div>";
+    h += '<div class="tiny muted" style="margin:6px 0 8px">先看卷面自己列方程算一遍，再按会 / 不熟 / 不会自评——系统按遗忘曲线安排下次复习。</div>';
+    h += figHTML([f], "原卷 · 第 " + p.page + " 页");
+    (function () {
+      var r = A.DB.exam && A.DB.exam[p.id];
+      if (!r || !r.n) return;
+      var gname = r.g === "ok" ? "会" : (r.g === "fuzzy" ? "不熟" : "不会");
+      h += '<div class="tiny muted exrev">已自评 ' + r.n + " 次 · 上次「" + gname + "」" +
+        (r.due ? " · 下次复习 " + String(r.due).slice(5) : "") + "</div>";
+    })();
+    h += '<div class="grade3">';
+    G3.forEach(function (g) {
+      h += '<button class="gbtn ' + g.cls + '" data-act="figgrade" data-g="' + g.g + '">' +
+        '<span class="gs">' + g.s + '</span><span class="gt">' + g.t + "</span></button>";
+    });
+    h += "</div>";
+    h += '<div class="row" style="margin-top:12px;gap:8px">' +
+      (i > 0 ? '<button class="btn ghost sm" data-act="fig-go" data-v="' + (i - 1) + '">‹ 上一题</button>' : "") +
+      (i < list.length - 1 ? '<button class="btn ghost sm" data-act="fig-go" data-v="' + (i + 1) + '">下一题 ›</button>' : "") +
+      "</div></div>";
+    return h;
+  }
+  A.vFigDrill = vFigDrill;
 
   /* ---------- 图片放大 ---------- */
   function openZoom(src, alt) {
@@ -2146,6 +2242,7 @@ if (ST.cardOpen) {
       "<b>院校</b>可切：上海大学 829（210 道，27 年）、桂林电子科技大学 806（356 道，14 年）。桂电的单题页里还有「看参考答案」折叠，能直接翻到当年答案页。",
       "点一道题进 <b>原卷页</b>：看到的是真题扫描图，手指放大看细节，然后按 <b>会 / 模糊 / 不会</b> 自评。",
       "「整卷」可以按页翻完一整年的卷子，带 3 小时计时器，适合周末模拟。",
+      "<b>⚡ 读图专项</b>：只刷带电路图的真题（196 道，先上大后桂电），专门练「看图列方程」这件事。",
       "「今日」页的 <b>每日一题</b> 就是一道真题，直接带你到原卷。"
     ]);
     h += S("错题与复习");
@@ -2434,7 +2531,7 @@ if (ST.cardOpen) {
     { id: "wrong", t: "重测", i: "↺", view: A.vWrong },
     { id: "stats", t: "我的", i: "▦", view: A.vStats }
   ];
-  var SUB = A.SUBVIEW || (A.SUBVIEW = { lesson: null, formula: 0, examone: -1, examschool: "shu" });
+  var SUB = A.SUBVIEW || (A.SUBVIEW = { lesson: null, formula: 0, examone: -1, examschool: "shu", fig: -1 });
 
   /* 当前院校的真题数组里取第 i 道 */
   function examAt(i) {
@@ -2446,6 +2543,7 @@ if (ST.cardOpen) {
     if (SUB.lesson) return { id: "lesson", html: A.vLesson(SUB.lesson) };
     if (SUB.formula) return { id: "formula", html: A.vFormula() };
     if (SUB.examone >= 0) return { id: "examone", html: A.vExamOne(SUB.examone) };
+    if (SUB.fig >= 0) return { id: "figdrill", html: A.vFigDrill(SUB.fig) };
     var t = ST.tab || "today";
     for (var i = 0; i < TABS.length; i++) {
       if (TABS[i].id === t) return { id: t, html: TABS[i].view() };
@@ -2508,7 +2606,7 @@ if (ST.cardOpen) {
 
   /* ---------- 路由 ---------- */
   function go(tab) {
-    SUB.lesson = null; SUB.formula = 0; SUB.examone = -1;
+    SUB.lesson = null; SUB.formula = 0; SUB.examone = -1; SUB.fig = -1;
     ST.tab = tab;
     if (tab === "drill") { ST.pin = null; A.buildList(); }
     render();
@@ -2984,6 +3082,30 @@ if (ST.cardOpen) {
   });
   setInterval(paintTimer, 1000);
 
+  /* 读图专项：所有带原卷图的电路真题 */
+  on("figdrill", function () {
+    SUB.lesson = null; SUB.formula = 0; SUB.examone = -1; SUB.paper = null;
+    SUB.fig = Math.max(0, SUB.fig || 0);
+    render();
+    window.scrollTo(0, 0);
+  });
+  on("figdrill-close", function () { SUB.fig = -1; render(); window.scrollTo(0, 0); });
+  on("fig-go", function (el) {
+    SUB.fig = Math.max(0, parseInt(el.getAttribute("data-v"), 10) || 0);
+    render();
+    window.scrollTo(0, 0);
+  });
+  on("figgrade", function (el) {
+    var list = A.figList();
+    var x = list[SUB.fig || 0];
+    if (!x) return;
+    var g = el.getAttribute("data-g");
+    A.recordExam(x.p.id, g);
+    render();
+    if (SUB.fig < list.length - 1) {
+      SUB.fig++; render(); window.scrollTo(0, 0);
+    }
+  });
   on("exam-back", function () {
     var back = SUB.retLesson, bp = SUB.retPaper;
     SUB.examone = -1; SUB.retLesson = null; SUB.retPaper = null;
