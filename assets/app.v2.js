@@ -270,7 +270,7 @@
     var f = st.flt || {};
     DB.last = {
       qid: q.id, qi: st.qi, total: st.list.length, at: Date.now(),
-      flt: { mode: f.mode || "all", kp: f.kp || "", subject: f.subject || "" },
+      flt: { mode: f.mode || "all", kp: f.kp || "", subject: f.subject || "", kw: f.kw || "" },
       pin: st.pin || ""
     };
     save();
@@ -290,6 +290,7 @@
     }
     var s = MODEN[f.mode || "all"] || "混合刷";
     if (f.subject) s += " · " + f.subject;
+    if (f.kw) s += " · 搜「" + (String(f.kw).length > 8 ? String(f.kw).slice(0, 8) + "…" : f.kw) + "」";
     return s;
   };
   A.agoText = function (ts) {
@@ -507,12 +508,21 @@
     DB.log[d] = L;
     save();
   }
-  /* 真题自评：真题没有题库条目，单独记在 DB.exam，不参与重测队列 */
+  /* 真题自评：真题没有题库条目，单独记在 DB.exam；同样按艾宾浩斯排到期日 */
   function recordExam(qid, g) {
     if (!qid) return;
-    var r = DB.exam[qid] || { n: 0, ok: 0 };
+    var r = DB.exam[qid] || { n: 0, ok: 0, lvl: 0, okSeq: 0, due: todayStr() };
     r.n++;
-    if (g === "ok") r.ok++;
+    if (g === "ok") {
+      r.ok++;
+      r.okSeq = (r.okSeq || 0) + 1;
+      r.lvl = Math.min((r.lvl || 0) + 1, STEPS.length - 1);
+      r.due = addDays(STEPS[r.lvl]);
+    } else {
+      r.okSeq = 0;
+      r.lvl = 0;
+      r.due = addDays(g === "fuzzy" ? 2 : 1);
+    }
     r.g = g;
     r.at = todayStr();
     DB.exam[qid] = r;
@@ -528,6 +538,19 @@
     return r;
   }
   function examDone(qid) { return !!(DB.exam && DB.exam[qid]); }
+
+  /* 真题到期复习：今天该重看的真题 id 列表（不会/不熟且到期） */
+  function examIsDue(qid) {
+    var r = DB.exam && DB.exam[qid];
+    if (!r || !r.due) return false;
+    if (r.g === "ok" && (r.okSeq || 0) >= 3) return false;
+    return r.due <= todayStr();
+  }
+  function examDueList() {
+    var out = [], k;
+    for (k in (DB.exam || {})) if (examIsDue(k)) out.push(k);
+    return out;
+  }
 
   /* 每题个人笔记 */
   function noteGet(qid) { return (DB.note && DB.note[qid]) || ""; }
@@ -676,7 +699,7 @@
   }
   A.dailyExam = dailyExam;
 
-  A.record = record; A.recordExam = recordExam; A.examDone = examDone; A.noteGet = noteGet; A.noteSet = noteSet; A.noteCount = noteCount;
+  A.record = record; A.recordExam = recordExam; A.examDone = examDone; A.examIsDue = examIsDue; A.examDueList = examDueList; A.noteGet = noteGet; A.noteSet = noteSet; A.noteCount = noteCount;
   A.markRead = markRead; A.isRead = isRead; A.readCount = readCount; A.posGet = posGet; A.posSet = posSet; A.master = master; A.unmaster = unmaster; A.toggleStar = toggleStar;
   A.dueList = dueList; A.dueCount = function () { return dueList().length; };
   A.todayQueue = todayQueue; A.todayLog = todayLog; A.streak = streak;
@@ -711,12 +734,12 @@
   /* ---------- 全局状态 ---------- */
   var ST = {
     tab: "today",
-    flt: { mode: "all", subject: "", kp: "", year: 0 },
+    flt: { mode: "all", subject: "", kp: "", year: 0, kw: "" },
     qi: 0, list: [], pin: null,
     answered: {},          /* 本轮已看答案的题 id（避免刷新后重复判分） */
     noteTab: "kp", lq: "", nq: "",
     examSchool: "shu",
-    examYear: 0, examType: "", examDiff: "", examPart: "", examHot: 0,
+    examYear: 0, examType: "", examDiff: "", examPart: "", examHot: 0, examDue: 0,
     aiq: null,             /* 当前问 AI 的题 */
     zoom: null,            /* 放大查看的图片 */
     kpOpen: false, kpSub: "电路"
@@ -800,6 +823,14 @@
       arr = arr.slice(0, 10);
     } else if (f.mode === "kp") {
       /* 已由 f.kp 过滤 */
+    }
+    if (f.kw) {
+      var kw = String(f.kw).toLowerCase();
+      arr = arr.filter(function (q) {
+        var kpText = (q.kp || []).map(function (k) { return (A.KPMAP[k] && A.KPMAP[k].name) || k; }).join(" ");
+        var hay = (q.stem || "") + " " + (q.solution || "") + " " + kpText + " " + (q.subject || "");
+        return hay.toLowerCase().indexOf(kw) >= 0;
+      });
     }
     if (ST.qi >= arr.length) ST.qi = 0;
     ST.list = arr;
@@ -1032,6 +1063,11 @@
 
     h += chipRow([["", "全部科目"], ["电路", "电路"], ["信号", "信号"]], f.subject, "subject");
 
+    /* 关键词筛选：只在本轮列表里搜，不动题库 */
+    h += '<div class="kwrow"><input id="kwsearch" class="kwsearch" type="search" placeholder="搜题干 / 解析 / 考点关键词" value="' +
+      esc(f.kw || "") + '">' +
+      (f.kw ? '<button class="btn ghost sm" data-act="kwclear">清空</button>' : "") + "</div>";
+
     if (f.mode === "kp") {
       h += '<div class="card kpcard">' + (ST.kpOpen || !f.kp ? kpPicker() : "") + "</div>";
       if (f.kp && A.KPMAP[f.kp]) {
@@ -1045,6 +1081,7 @@
     if (!ST.list.length) {
       return h + '<div class="empty">这个筛选条件下没有题。<br><span class="tiny">换个场景试试</span></div>';
     }
+    if (f.kw) h += '<div class="tiny muted kwline">关键词「' + esc(f.kw) + "」匹配到 " + ST.list.length + " 道（搜题干、解析、考点名）</div>";
 
     var n = ST.list.length;
     if (ST.qi >= n) ST.qi = 0;
@@ -1093,6 +1130,10 @@ if (ST.cardOpen) {
       h += '<button class="chip' + (ST.examDiff === p[0] ? " on" : "") + '" data-f="examDiff" data-v="' + p[0] + '">' + p[1] + "</button>";
     });
     h += '<button class="chip' + (ST.examHot ? " on" : "") + '" data-f="examHot" data-v="' + (ST.examHot ? "0" : "1") + '">只看高频</button>';
+    var nd = A.examDueList().length;
+    if (nd) {
+      h += '<button class="chip alt' + (ST.examDue ? " on" : "") + '" data-f="examDue" data-v="' + (ST.examDue ? "0" : "1") + '">真题待复习 ' + nd + "</button>";
+    }
     h += "</div>";
     h += '<div class="chips">';
     [["", "电路+信号"], ["电路", "电路"], ["信号", "信号"]].forEach(function (p) {
@@ -1103,6 +1144,7 @@ if (ST.cardOpen) {
   }
 
   function examMatch(p) {
+    if (ST.examDue && !A.examIsDue(p.id)) return false;
     if (ST.examYear && Number(p.year) !== Number(ST.examYear)) return false;
     if (ST.examQ) {
       var q = String(ST.examQ).toLowerCase();
@@ -1280,6 +1322,13 @@ if (ST.cardOpen) {
       })() + "</div>";
     h += figHTML(pagesOf(p), p.year + " 年原卷");
     h += '<div class="tiny muted">上面是当年原卷扫描页（题干、电路图、数据都在里面）。做完自己判：</div>';
+    (function () {
+      var r = A.DB.exam && A.DB.exam[p.id];
+      if (!r || !r.n) return;
+      var gname = r.g === "ok" ? "会" : (r.g === "fuzzy" ? "不熟" : "不会");
+      h += '<div class="tiny muted exrev">已自评 ' + r.n + " 次 · 上次「" + gname + "」" +
+        (r.due ? " · 下次复习 " + String(r.due).slice(5) : "") + "</div>";
+    })();
     h += '<div class="grade3">';
     G3.forEach(function (x) {
       h += '<button class="gbtn ' + x.cls + '" data-act="grade-exam" data-v="' + i + '" data-g="' + x.g + '">' +
@@ -1389,6 +1438,16 @@ if (ST.cardOpen) {
       h += '<div class="tiny muted">可以开新题，或者把重测里的硬骨头啃一啃。</div>';
       h += '<div class="row"><button class="btn primary" data-act="start-new">做新题</button>' +
         '<button class="btn ghost" data-act="start-wrong">重测</button></div>';
+      h += "</div>";
+    }
+
+    /* 真题到期复习：标过「不会/不熟」的真题按遗忘曲线排到期 */
+    var ed = A.examDueList().length;
+    if (ed) {
+      h += '<div class="card duecard">';
+      h += '<div class="duetop"><span class="duenum">' + ed + '</span><span class="duetxt">道真题该重做了</span></div>';
+      h += '<div class="tiny muted">上次标了「不会 / 不熟」的真题到复习日了，重看一遍原卷比刷新题划算。</div>';
+      h += '<button class="btn primary block" data-act="exam-due">去重做</button>';
       h += "</div>";
     }
 
@@ -1970,6 +2029,18 @@ if (ST.cardOpen) {
         }, 260);
       });
     });
+    var kws = $("#kwsearch");
+    if (kws) {
+      kws.addEventListener("input", function () {
+        ST.flt.kw = kws.value;
+        if (searchTimer) clearTimeout(searchTimer);
+        searchTimer = setTimeout(function () {
+          ST.qi = 0; A.buildList(); render();
+          var e2 = $("#kwsearch");
+          if (e2) { e2.focus(); e2.setSelectionRange(e2.value.length, e2.value.length); }
+        }, 240);
+      });
+    }
     var jp = $("#jump");
     if (jp) {
       jp.addEventListener("change", function () {
@@ -1995,6 +2066,7 @@ if (ST.cardOpen) {
     ST.flt.mode = f.mode || "all";
     ST.flt.kp = f.kp || "";
     ST.flt.subject = f.subject || "";
+    ST.flt.kw = f.kw || "";
     go("drill");                                  /* 会 buildList 并按 flt 重排 */
     if (l.pin) { ST.pin = l.pin; A.buildList(); } /* pin = 单题回看，需在 go 之后恢复 */
     var idx = -1, i;
@@ -2004,9 +2076,12 @@ if (ST.cardOpen) {
     A.toast("接着上次：第 " + (ST.qi + 1) + " 题", "ok");
   });
   on("resume-new", function () {
-    ST.flt.mode = "all"; ST.flt.kp = ""; ST.flt.subject = ""; ST.pin = null;
+    ST.flt.mode = "all"; ST.flt.kp = ""; ST.flt.subject = ""; ST.flt.kw = ""; ST.pin = null;
     ST.qi = 0;
     go("drill");
+  });
+  on("kwclear", function () {
+    ST.flt.kw = ""; ST.qi = 0; A.buildList(); render();
   });
   on("start-wrong", function () { ST.flt.mode = "wrong"; go("drill"); });
   on("open-q", function (el) {
@@ -2172,6 +2247,12 @@ if (ST.cardOpen) {
   /* 真题 */
   on("exam-all", function () {
     ST.examType = ""; ST.examPart = ""; ST.examDiff = ""; ST.examHot = 0; render();
+  });
+  /* 真题待复习：跳真题页并只看到期的那些 */
+  on("exam-due", function () {
+    ST.examDue = 1; ST.examYear = 0; ST.examType = ""; ST.examPart = ""; ST.examDiff = ""; ST.examHot = 0; ST.examQ = "";
+    SUB.lesson = null; SUB.formula = 0; SUB.examone = -1; SUB.paper = null;
+    go("exam");
   });
   on("open-exam", function (el) {
     SUB.retLesson = SUB.lesson || null;   /* 从讲义点进来的，返回时回讲义 */
@@ -2481,10 +2562,11 @@ if (ST.cardOpen) {
       e.preventDefault();
       ST[f] = el.getAttribute("data-v");
       if (f === "examHot") ST.examHot = el.getAttribute("data-v") === "1" ? 1 : 0;
+      if (f === "examDue") ST.examDue = el.getAttribute("data-v") === "1" ? 1 : 0;
       if (f === "year") ST.examYear = parseInt(el.getAttribute("data-v"), 10) || 0;
-      if (f === "school") { ST.examSchool = el.getAttribute("data-v"); ST.examYear = 0; ST.examType = ""; ST.examPart = ""; ST.examDiff = ""; ST.examHot = 0; }
-      if (f === "mode") { ST.qi = 0; if (el.getAttribute("data-v") !== "kp") ST.kpOpen = false; }
-      if (f === "subject") { ST.flt.subject = el.getAttribute("data-v"); ST.qi = 0; }
+      if (f === "school") { ST.examSchool = el.getAttribute("data-v"); ST.examYear = 0; ST.examType = ""; ST.examPart = ""; ST.examDiff = ""; ST.examHot = 0; ST.examDue = 0; }
+      if (f === "mode") { ST.qi = 0; ST.flt.kw = ""; if (el.getAttribute("data-v") !== "kp") ST.kpOpen = false; }
+      if (f === "subject") { ST.flt.subject = el.getAttribute("data-v"); ST.flt.kw = ""; ST.qi = 0; }
       A.buildList(); render();
       return;
     }
