@@ -2002,6 +2002,37 @@ if (ST.cardOpen) {
     h += '<div class="pbar thin"><i style="width:' + pr.pct + '%"></i><span>' + pr.done + " / " + pr.total + "</span></div>";
     h += "</div>";
 
+    /* 本周小结：做题量 / 正确率与上周对比 */
+    var wN = 0, wOk = 0, pN = 0, pOk = 0;
+    for (var wi = 6; wi >= 0; wi--) {
+      var wl = A.DB.log[A.addDays(-wi)] || { n: 0, ok: 0 };
+      wN += wl.n || 0; wOk += wl.ok || 0;
+    }
+    for (var pi = 13; pi >= 7; pi--) {
+      var pl = A.DB.log[A.addDays(-pi)] || { n: 0, ok: 0 };
+      pN += pl.n || 0; pOk += pl.ok || 0;
+    }
+    var wRate = wN ? Math.round(wOk / wN * 100) : 0;
+    var pRate = pN ? Math.round(pOk / pN * 100) : 0;
+    var dN = wN - pN, dR = (wN && pN) ? wRate - pRate : 0;
+    var sign = function (v, unit) { return (v > 0 ? "+" : "") + v + (unit || ""); };
+    h += '<div class="card wrep"><div class="h4">本周小结 <span class="tiny muted">' + A.addDays(-6).slice(5) + " ~ " + A.addDays(0).slice(5) + "</span></div>";
+    h += '<div class="wrow"><span class="wk">做题</span><b>' + wN + '</b><span class="tiny muted">题</span>' +
+      (pN || wN ? '<span class="dg ' + (dN > 0 ? "up" : dN < 0 ? "down" : "") + '">' + (dN === 0 ? "与上周持平" : sign(dN) + " 题 vs 上周") + "</span>" : "") + "</div>";
+    h += '<div class="wrow"><span class="wk">正确率</span><b>' + (wN ? wRate + "%" : "—") + "</b>" +
+      (wN && pN ? '<span class="dg ' + (dR > 0 ? "up" : dR < 0 ? "down" : "") + '">' + (dR === 0 ? "与上周持平" : sign(dR, "%") + " vs 上周") + "</span>" : "") +
+      '<span class="tiny muted">上周 ' + (pN ? pN + " 题 · " + pRate + "%" : "没做题") + "</span></div>";
+    var wk = A.weakKps ? A.weakKps() : [];
+    if (wk.length) {
+      h += '<div class="wrow"><span class="wk">最薄弱</span><span class="weakchips">';
+      wk.slice(0, 3).forEach(function (x) {
+        var nm = (A.KPMAP[x.k] || {}).name || x.k;
+        h += '<button class="chip tiny" data-act="drill-kp" data-v="' + esc(x.k) + '">' + esc(nm) + " " + Math.round(x.rate * 100) + "%</button>";
+      });
+      h += "</span></div>";
+    }
+    h += "</div>";
+
     /* 14 天 */
     var days = [], maxN = 1;
     for (var i = 13; i >= 0; i--) {
