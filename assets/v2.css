@@ -96,6 +96,20 @@ main{max-width:760px;margin:0 auto;padding:14px 14px 26px}
   padding:2px 8px;border-radius:999px}
 .dst{font-size:14.5px;line-height:1.7}
 .stats4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  /* 考点掌握热力图 */
+  .hmgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin:8px 0 6px}
+  .hmcell{height:32px;border:0;border-radius:7px;font-size:9.5px;font-weight:600;line-height:1;
+    display:flex;align-items:center;justify-content:center;padding:0;letter-spacing:-.2px;cursor:pointer}
+  .hm0{background:#e9edf2;color:#98a2ad}
+  .hm1{background:#e2795c;color:#fff}
+  .hm2{background:#e5b45f;color:#5b430f}
+  .hm3{background:#4f9d74;color:#fff}
+  .hmlegend{display:flex;gap:12px;flex-wrap:wrap;margin-top:2px}
+  .hmlegend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+  .hmlegend i.hm0{background:#e9edf2}
+  .hmlegend i.hm1{background:#e2795c}
+  .hmlegend i.hm2{background:#e5b45f}
+  .hmlegend i.hm3{background:#4f9d74}
 .sbox{background:var(--bg);border:1px solid var(--line2);border-radius:11px;padding:9px 6px;text-align:center}
 .sbox b{display:block;font-size:19px;font-weight:700;line-height:1.2}
 .sbox span{font-size:11.5px;color:var(--ink2)}

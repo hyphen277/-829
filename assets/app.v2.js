@@ -708,6 +708,24 @@
       .slice(0, limit || 8);
   };
 
+  /* 全部考点的做题统计（做过的和没做过的都返回），供热力图用 */
+  A.kpStats = function () {
+    var st = {};
+    (A.QS || []).forEach(function (q) {
+      var r = A.DB && A.DB.q && A.DB.q[q.id]; if (!r || !r.n) return;
+      (q.kp || []).forEach(function (k) {
+        var o = st[k] = st[k] || { n: 0, ok: 0 };
+        o.n += r.n; o.ok += r.ok;
+      });
+    });
+    var out = [];
+    Object.keys(A.KPMAP || {}).forEach(function (k) {
+      var s = st[k] || { n: 0, ok: 0 };
+      out.push({ k: k, name: (A.KPMAP[k] || {}).name || k, n: s.n, ok: s.ok, rate: s.n ? s.ok / s.n : -1 });
+    });
+    return out;
+  };
+
   /* 每日一题：按日期固定挑一道真题风格的计算题 */
   function dailyQ() {
     if (!QS.length) return null;
@@ -2073,7 +2091,27 @@ if (ST.cardOpen) {
     }
     h += "</div>";
 
-    /* 14 天 */
+    /* 考点掌握热力图 */
+    var ks = A.kpStats ? A.kpStats().sort(function (a, b) {
+      if (a.rate < 0 && b.rate < 0) return a.k - b.k;
+      if (a.rate < 0) return 1;
+      if (b.rate < 0) return -1;
+      return a.rate - b.rate;
+    }) : [];
+    if (ks.length) {
+      var doneN = ks.filter(function (x) { return x.n > 0; }).length;
+      h += '<div class="card"><div class="h4">考点掌握 <span class="tiny muted">练过 ' + doneN + " / " + ks.length + "</span></div>";
+      h += '<div class="hmgrid">';
+      ks.forEach(function (x) {
+        var cls = x.n === 0 ? "hm0" : x.rate < 0.5 ? "hm1" : x.rate < 0.75 ? "hm2" : "hm3";
+        var txt = x.n === 0 ? "—" : Math.round(x.rate * 100) + "%";
+        h += '<button class="hmcell ' + cls + '" data-act="drill-kp" data-v="' + esc(x.k) + '" title="' +
+          esc(x.name) + "：" + (x.n ? "做 " + x.n + " 次，对 " + x.ok + " 次" : "还没练过") + '">' + txt + "</button>";
+      });
+      h += "</div>";
+      h += '<div class="hmlegend tiny muted"><span><i class="hm0"></i>没练</span><span><i class="hm1"></i>&lt;50%</span><span><i class="hm2"></i>50~75%</span><span><i class="hm3"></i>&ge;75%</span></div>';
+      h += '<div class="tiny muted">格子越红越该补，点一下直接去练那个考点。</div></div>';
+    }
     var days = [], maxN = 1;
     for (var i = 13; i >= 0; i--) {
       var d = A.addDays(-i), L = A.DB.log[d] || { n: 0, ok: 0 };
