@@ -193,7 +193,7 @@
 
   function blank() {
     return {
-      v: 3, q: {}, log: {}, wrong: {}, star: {}, mock: {}, exam: {}, note: {}, read: {}, pos: {}, fs: 0,
+      v: 3, q: {}, log: {}, wrong: {}, star: {}, mock: {}, exam: {}, note: {}, hl: {}, read: {}, pos: {}, fs: 0,
       first: todayStr(), tipSeen: 0, sum: {}
     };
   }
@@ -208,6 +208,7 @@
     o.mock = o.mock || {};
     o.exam = o.exam || {};
     o.note = o.note || {};
+    o.hl = o.hl || {};
     o.read = o.read || {};
     o.pos = o.pos || {};
     o.first = o.first || b.first;
@@ -587,6 +588,29 @@
     save();
   }
 
+  /* ---------- 讲义划线重点：DB.hl[lessonId] = [{t:"选中的文字", at:"日期"}] ---------- */
+  function hlList(id) { return (DB.hl && DB.hl[id]) ? DB.hl[id].slice() : []; }
+  function hlCount(id) { return hlList(id).length; }
+  function hlAdd(id, t) {
+    t = String(t || "").replace(/\s+/g, " ").trim();
+    if (!id || t.length < 2) return false;
+    if (t.length > 160) t = t.slice(0, 160);
+    DB.hl = DB.hl || {};
+    var arr = DB.hl[id] = DB.hl[id] || [];
+    for (var i = 0; i < arr.length; i++) if (arr[i].t === t) return false;
+    arr.push({ t: t, at: todayStr() });
+    save();
+    return true;
+  }
+  function hlDel(id, t) {
+    if (!DB.hl || !DB.hl[id]) return false;
+    var before = DB.hl[id].length;
+    DB.hl[id] = DB.hl[id].filter(function (x) { return x.t !== t; });
+    if (!DB.hl[id].length) delete DB.hl[id];
+    save();
+    return DB.hl[id] ? DB.hl[id].length !== before : true;
+  }
+
   /* 标记「已经会了」：移出复习周期，但保留历史 */
   function master(qid) {
     var r = DB.q[qid] || { n: 0, ok: 0, lvl: 0 };
@@ -730,6 +754,7 @@
   }
   A.setWhy = setWhy; A.whyStats = whyStats;
   A.markRead = markRead; A.isRead = isRead; A.readCount = readCount; A.posGet = posGet; A.posSet = posSet; A.master = master; A.unmaster = unmaster; A.toggleStar = toggleStar;
+  A.hlList = hlList; A.hlCount = hlCount; A.hlAdd = hlAdd; A.hlDel = hlDel;
   A.dueList = dueList; A.dueCount = function () { return dueList().length; };
   A.todayQueue = todayQueue; A.todayLog = todayLog; A.streak = streak;
   A.progress = progress; A.totalN = totalN; A.dailyQ = dailyQ;
@@ -1679,7 +1704,8 @@ if (ST.cardOpen) {
         var words = l.md ? String(l.md).length : 0;
         var sum = (l.summary || "").trim();
         h += '<div class="lessonrow" data-act="lesson" data-v="' + esc(l.id) + '">' +
-          '<div class="lt">' + esc(l.title) + (A.isRead(l.id) ? '<span class="readmark">✓</span>' : "") + "</div>" +
+          '<div class="lt">' + esc(l.title) + (A.isRead(l.id) ? '<span class="readmark">✓</span>' : "") +
+          (A.hlCount(l.id) ? '<span class="tiny hlcount">✎' + A.hlCount(l.id) + "</span>" : "") + "</div>" +
           '<div class="ls">' + esc(sum || words + " 字") + "</div></div>";
       });
     });
@@ -1966,11 +1992,22 @@ if (ST.cardOpen) {
     var prev = k > 0 ? sib[k - 1] : null;
     var next = (k >= 0 && k < sib.length - 1) ? sib[k + 1] : null;
 
+    var hls = A.hlList(L.id);
     var h = '<div class="lsbar"><button class="btn ghost sm" data-act="lesson-back">‹ 讲义</button>' +
       '<span class="fsbtns"><button class="fsb" data-act="fs" data-v="-1">A−</button>' +
       '<button class="fsb" data-act="fs" data-v="1">A+</button></span>' +
+      (hls.length ? '<span class="tiny hlcount">✎ ' + hls.length + " 处重点</span>" : "") +
       (A.isRead(L.id) ? '<span class="tiny muted">✓ 已读</span>' : "") + "</div>";
     h += '<article class="lessonpage fs' + (A.DB.fs || 0) + '">' + md(L.md) + "</article>";
+    h += '<div class="tiny muted hltip">长按或选中正文里的句子，就能标成重点，下次打开还在这儿。</div>';
+    if (hls.length) {
+      h += '<div class="card"><div class="h4">本讲重点 <span class="tiny muted">' + hls.length + " 处</span></div>";
+      hls.forEach(function (x, i) {
+        h += '<div class="hlrow"><span class="hltxt">' + esc(x.t) + "</span>" +
+          '<button class="ibtn" data-act="hl-del" data-v="' + esc(x.t) + '" title="删除">✕</button></div>';
+      });
+      h += "</div>";
+    }
     var kps = A.kpsOfLesson(L.id);
     if (kps.length) {
       h += '<div class="card" style="margin-top:14px"><div class="h4">本讲对应考点</div><div class="chips">';
@@ -2055,6 +2092,8 @@ if (ST.cardOpen) {
     lastView = v.id;
     paintNav(v.id);
     A.tick();
+    if (v.id === "lesson") applyHL(SUB.lesson);
+    else { var hb = document.getElementById("hlbar"); if (hb) hb.classList.remove("on"); }
     if (v.id === "drill") {
       A.mountBody();
       if (ST.__answered) restoreAnswered();
@@ -2214,6 +2253,94 @@ if (ST.cardOpen) {
     window.scrollTo(0, A.posGet(id));
   });
   on("lesson-back", function () { SUB.lesson = null; render(); window.scrollTo(0, 0); });
+
+  /* ---------- 讲义划线重点 ---------- */
+  var pendingHL = "";
+  function wrapOnce(node, t) {
+    var v = node.nodeValue || "";
+    var i = v.indexOf(t);
+    if (i < 0) return null;
+    var parent = node.parentNode;
+    if (!parent) return null;
+    var before = v.slice(0, i), after = v.slice(i + t.length);
+    var mark = document.createElement("mark");
+    mark.className = "hl";
+    mark.textContent = t;
+    if (before) parent.insertBefore(document.createTextNode(before), node);
+    parent.insertBefore(mark, node);
+    var tail = null;
+    if (after) { tail = document.createTextNode(after); parent.insertBefore(tail, node); }
+    parent.removeChild(node);
+    return tail;
+  }
+  function wrapAll(root, t) {
+    if (!t) return 0;
+    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    var nodes = [], n;
+    while ((n = w.nextNode())) if (n.nodeValue && n.nodeValue.length >= t.length) nodes.push(n);
+    var hits = 0;
+    for (var i = 0; i < nodes.length; i++) {
+      var cur = nodes[i];
+      while (cur) {
+        if (cur.parentNode && cur.parentNode.nodeName === "MARK") break;
+        var tail = wrapOnce(cur, t);
+        if (tail === null) break;
+        hits++;
+        cur = tail;
+      }
+    }
+    return hits;
+  }
+  function applyHL(id) {
+    var root = document.querySelector(".lessonpage");
+    if (!root || !id) return;
+    A.hlList(id).forEach(function (x) { wrapAll(root, x.t); });
+  }
+  A.applyHL = applyHL;
+
+  function hlBar() { return $("#hlbar"); }
+  function refreshHLBar() {
+    var bar = hlBar();
+    if (!bar) return;
+    var sel = window.getSelection();
+    var t = sel ? String(sel.toString()) : "";
+    t = t.replace(/\s+/g, " ").trim();
+    var page = document.querySelector(".lessonpage");
+    var ok = !!(page && t && t.length >= 2 && t.length <= 160 && sel.anchorNode && page.contains(sel.anchorNode));
+    if (!ok) { pendingHL = ""; bar.classList.remove("on"); return; }
+    pendingHL = t;
+    var sn = bar.querySelector(".hlsnip");
+    if (sn) sn.textContent = t.length > 42 ? t.slice(0, 42) + "…" : t;
+    bar.classList.add("on");
+  }
+  document.addEventListener("selectionchange", function () {
+    if (!SUB.lesson) { var b = hlBar(); if (b) b.classList.remove("on"); return; }
+    refreshHLBar();
+  });
+  on("hl-add", function () {
+    if (!SUB.lesson || !pendingHL) return;
+    var ok = A.hlAdd(SUB.lesson, pendingHL);
+    try { window.getSelection().removeAllRanges(); } catch (e) {}
+    var b = hlBar(); if (b) b.classList.remove("on");
+    var y = window.scrollY;
+    render();
+    window.scrollTo(0, y);
+    A.toast(ok ? "已标为重点" : "这句已经在重点里了");
+  });
+  on("hl-cancel", function () {
+    try { window.getSelection().removeAllRanges(); } catch (e) {}
+    var b = hlBar(); if (b) b.classList.remove("on");
+    pendingHL = "";
+  });
+  on("hl-del", function (el) {
+    var t = el.getAttribute("data-v");
+    if (!SUB.lesson || !t) return;
+    A.hlDel(SUB.lesson, t);
+    var y = window.scrollY;
+    render();
+    window.scrollTo(0, y);
+    A.toast("已删除这处重点");
+  });
 
   /* 讲义字号 */
   on("fs", function (el) {
