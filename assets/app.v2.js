@@ -245,6 +245,16 @@
   DB = load();
   A.DB = DB;
   A.save = save; A.saveNow = saveNow;
+
+  /* 手机切走/关页时立刻落盘，别让 120ms 的延迟吞掉最后一条记录 */
+  (function () {
+    function flush() { try { saveNow(); } catch (e) { } }
+    if (document.addEventListener) {
+      document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") flush(); });
+      window.addEventListener("pagehide", flush);
+      window.addEventListener("beforeunload", flush);
+    }
+  })();
   A.reload = function () { DB = A.DB = load(); return DB; };
 
   /* ---------- 上次刷题位置（断点续做） ---------- */
@@ -610,6 +620,23 @@
     for (var k in DB.log) { n += DB.log[k].n || 0; ok += DB.log[k].ok || 0; }
     return { n: n, ok: ok };
   }
+  /* 薄弱考点：按正确率从低到高（做题次数不够的不算） */
+  A.weakKps = function (minN, limit) {
+    var kpStat = {};
+    (A.QS || []).forEach(function (q) {
+      var r = A.DB && A.DB.q && A.DB.q[q.id]; if (!r || !r.n) return;
+      (q.kp || []).forEach(function (k) {
+        var st = kpStat[k] = kpStat[k] || { n: 0, ok: 0 };
+        st.n += r.n; st.ok += r.ok;
+      });
+    });
+    return Object.keys(kpStat).filter(function (k) { return kpStat[k].n >= (minN || 2); })
+      .map(function (k) { return { k: k, rate: kpStat[k].ok / kpStat[k].n, n: kpStat[k].n }; })
+      .filter(function (x) { return x.rate < 0.7; })
+      .sort(function (a, b) { return a.rate - b.rate; })
+      .slice(0, limit || 8);
+  };
+
   /* 每日一题：按日期固定挑一道真题风格的计算题 */
   function dailyQ() {
     if (!QS.length) return null;
@@ -830,7 +857,13 @@
       h += '<div class="fb-sec"><div class="fb-h"><i>🎯</i>标准答案</div><div class="fb-body">' + md(q.answerText) + "</div></div>";
     }
 
-    h += '<div class="fb-kp"><span class="fb-kplabel">考什么</span>' + kpChips(q, true) + "</div>";
+    h += '<div class="fb-kp"><span class="fb-kplabel">考什么</span>' + kpChips(q, true) +
+      (function () {
+        var lid = null;
+        (q.kp || []).some(function (k) { var l = A.lessonOfKp && A.lessonOfKp(k); if (l) { lid = l; return true; } return false; });
+        if (!lid || !A.LESSON_MAP[lid]) return "";
+        return '<button class="fblink" data-act="gotolesson" data-v="' + esc(lid) + '">看本考点讲义 ›</button>';
+      })() + "</div>";
     h += '<div class="grade3">';
     G3.forEach(function (x) {
       h += '<button class="gbtn ' + x.cls + '" data-act="grade" data-g="' + x.g + '" title="' + esc(x.tip) + '">' +
@@ -1179,7 +1212,13 @@ if (ST.cardOpen) {
       (p.points ? '<span class="tag">' + p.points + " 分</span>" : "") +
       '<span class="tag d">' + diffStars(p.difficulty) + "</span></div>";
     h += '<div class="exbrief big">' + esc(p.brief || "") + "</div>";
-    h += '<div class="fb-kp"><span class="fb-kplabel">考什么</span>' + kpChips(p, true) + "</div>";
+    h += '<div class="fb-kp"><span class="fb-kplabel">考什么</span>' + kpChips(p, true) +
+      (function () {
+        var lid = null;
+        (p.kp || []).some(function (k) { var l = A.lessonOfKp && A.lessonOfKp(k); if (l) { lid = l; return true; } return false; });
+        if (!lid || !A.LESSON_MAP[lid]) return "";
+        return '<button class="fblink" data-act="gotolesson" data-v="' + esc(lid) + '">看考点讲义 ›</button>';
+      })() + "</div>";
     h += figHTML(pagesOf(p), p.year + " 年原卷");
     h += '<div class="tiny muted">上面是当年原卷扫描页（题干、电路图、数据都在里面）。做完自己判：</div>';
     h += '<div class="grade3">';
@@ -1292,6 +1331,19 @@ if (ST.cardOpen) {
       h += '<div class="row"><button class="btn primary" data-act="start-new">做新题</button>' +
         '<button class="btn ghost" data-act="start-wrong">重测</button></div>';
       h += "</div>";
+    }
+
+    /* 该补的考点：只挑最弱的一两个，给一条明确指令 */
+    var wk = A.weakKps(3, 2);
+    if (wk.length) {
+      h += '<div class="card weakcard"><div class="h4">最该补的两个考点</div>';
+      wk.forEach(function (w) {
+        var p = A.KPMAP[w.k] || { name: w.k };
+        h += '<div class="secrow"><span class="secname">' + esc(p.name) + "</span>" +
+          '<span class="seccount">' + Math.round(w.rate * 100) + "% · 练过 " + w.n + " 次</span>" +
+          '<button class="btn sm" data-act="drill-kp" data-v="' + esc(w.k) + '">练它</button></div>';
+      });
+      h += '<div class="tiny muted">正确率低于 70% 且练过 3 次以上的考点，按最差排的。</div></div>';
     }
 
     /* 每日一题：给一道真题，原卷页图直接摆在卡上（题目、电路图都在卷面里） */
@@ -1635,18 +1687,7 @@ if (ST.cardOpen) {
     h += "</div>";
 
     /* 薄弱考点 + 去补练 */
-    var kpStat = {};
-    A.QS.forEach(function (q) {
-      var r = A.DB.q[q.id]; if (!r || !r.n) return;
-      (q.kp || []).forEach(function (k) {
-        var s = kpStat[k] = kpStat[k] || { n: 0, ok: 0 };
-        s.n += r.n; s.ok += r.ok;
-      });
-    });
-    var weak = Object.keys(kpStat).filter(function (k) { return kpStat[k].n >= 2; })
-      .map(function (k) { return { k: k, rate: kpStat[k].ok / kpStat[k].n, n: kpStat[k].n }; })
-      .filter(function (x) { return x.rate < 0.7; })
-      .sort(function (a, b) { return a.rate - b.rate; }).slice(0, 8);
+    var weak = A.weakKps(2, 8);
 
     h += '<div class="card"><div class="h4">薄弱考点</div>';
     if (!weak.length) h += '<div class="tiny muted">暂时没有薄弱的，保持。</div>';
@@ -2119,6 +2160,8 @@ if (ST.cardOpen) {
   });
 
   /* 图片放大 */
+  on("gotolesson", function (el) { openLesson(el.getAttribute("data-v")); });
+
   on("zoom", function (el) { A.openZoom(el.getAttribute("data-src"), el.getAttribute("data-alt")); });
   on("zoom-close", function () { A.closeZoom(); });
 
