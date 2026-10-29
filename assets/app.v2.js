@@ -1260,6 +1260,7 @@ if (ST.cardOpen) {
   function examMatch(p) {
     if (ST.examDue && !A.examIsDue(p.id)) return false;
     if (ST.examYear && Number(p.year) !== Number(ST.examYear)) return false;
+    if (ST.examKp && (p.kp || []).indexOf(ST.examKp) < 0) return false;
     if (ST.examQ) {
       var q = String(ST.examQ).toLowerCase();
       var hay = (p.brief || "") + " " + (p.year || "") + " " + (p.no || "") + " " + (p.part || "") + " " + (p.type || "");
@@ -1373,6 +1374,21 @@ if (ST.cardOpen) {
       }
     }
     h += "</div>";
+
+    /* 考点条：只看某个考点的历年真题（取考频最高的 14 个） */
+    var krows = A.KPLIST.map(function (p) { return { p: p, n: A.FREQ[p.id] || 0, n10: A.FREQ10[p.id] || 0 }; })
+      .filter(function (x) { return x.n > 0; })
+      .sort(function (a, b) { return b.n10 - a.n10 || b.n - a.n; })
+      .slice(0, 14);
+    if (krows.length) {
+      h += '<div class="kchips"><span class="kchipslb">考点</span>' +
+        '<button class="chip' + (!ST.examKp ? " on" : "") + '" data-f="examKp" data-v="">全部</button>';
+      krows.forEach(function (x) {
+        h += '<button class="chip' + (ST.examKp === x.p.id ? " on" : "") + '" data-f="examKp" data-v="' + esc(x.p.id) + '">' +
+          esc(x.p.name) + "</button>";
+      });
+      h += "</div>";
+    }
 
     h += examFilterChips();
     h += '<div class="searchwrap"><input id="exq" class="searchbox" type="search" placeholder="搜关键词，如 戴维南 / 三相 / 触发器" value="' +
@@ -3008,7 +3024,7 @@ if (ST.cardOpen) {
       if (f === "examHot") ST.examHot = el.getAttribute("data-v") === "1" ? 1 : 0;
       if (f === "examDue") ST.examDue = el.getAttribute("data-v") === "1" ? 1 : 0;
       if (f === "year") ST.examYear = parseInt(el.getAttribute("data-v"), 10) || 0;
-      if (f === "school") { ST.examSchool = el.getAttribute("data-v"); ST.examYear = 0; ST.examType = ""; ST.examPart = ""; ST.examDiff = ""; ST.examHot = 0; ST.examDue = 0; }
+      if (f === "school") { ST.examSchool = el.getAttribute("data-v"); ST.examYear = 0; ST.examKp = ""; ST.examType = ""; ST.examPart = ""; ST.examDiff = ""; ST.examHot = 0; ST.examDue = 0; }
       if (f === "mode") { ST.qi = 0; ST.flt.kw = ""; if (el.getAttribute("data-v") !== "kp") ST.kpOpen = false; }
       if (f === "subject") { ST.flt.subject = el.getAttribute("data-v"); ST.flt.kw = ""; ST.qi = 0; }
       A.buildList(); render();

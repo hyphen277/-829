@@ -554,3 +554,8 @@ mark.findhl{background:color-mix(in srgb,var(--accent) 30%,transparent);color:in
 .wrep .weakchips{display:flex;gap:6px;flex-wrap:wrap;flex:1}
 .wrep .weakchips .chip{font-size:11.5px;padding:4px 9px}
 .chip.tiny{font-size:11.5px;padding:4px 9px}
+
+.kchips{display:flex;gap:7px;align-items:center;overflow-x:auto;padding:2px 0 8px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.kchips::-webkit-scrollbar{display:none}
+.kchips .kchipslb{font-size:11.5px;color:var(--ink3);flex:0 0 auto;letter-spacing:.5px}
+.kchips .chip{flex:0 0 auto;font-size:12px;padding:5px 10px;white-space:nowrap}
