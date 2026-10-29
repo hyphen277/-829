@@ -620,6 +620,18 @@
     for (var k in DB.log) { n += DB.log[k].n || 0; ok += DB.log[k].ok || 0; }
     return { n: n, ok: ok };
   }
+  /* 某一年的整套卷子涉及哪些扫描页（升序，去重） */
+  A.paperPages = function (schoolId, year) {
+    var sch = schoolOf(schoolId || "shu"), set = {};
+    (sch.list || []).forEach(function (p) {
+      if (Number(p.year) !== Number(year)) return;
+      if (p.page) set[p.page] = 1;
+      if (p.page2) set[p.page2] = 1;
+      (p.pages || []).forEach(function (x) { if (x) set[x] = 1; });
+    });
+    return Object.keys(set).map(Number).sort(function (a, b) { return a - b; });
+  };
+
   /* 薄弱考点：按正确率从低到高（做题次数不够的不算） */
   A.weakKps = function (minN, limit) {
     var kpStat = {};
@@ -1124,6 +1136,46 @@ if (ST.cardOpen) {
     return h;
   }
 
+  /* 整卷模式：一年一套，按页翻原卷，适合掐时间做整套 */
+  function vPaper(year, idx) {
+    var sch = A.schoolOf(ST.examSchool || "shu");
+    var pages = A.paperPages(sch.id, year);
+    var total = pages.length;
+    if (!total) return '<div class="card"><p>这一年的原卷页还没接入。</p></div>';
+    var i = Math.max(0, Math.min(total - 1, A.num(idx, 0)));
+    var f = "p" + String(pages[i]).padStart(3, "0") + ".jpg";
+    var probs = (sch.list || []).filter(function (p) {
+      return Number(p.year) === Number(year) && (!ST.examYear || Number(p.year) === Number(ST.examYear));
+    });
+    var h = '<div class="paperhead"><button class="btn ghost sm" data-act="paper-close">‹ 真题列表</button>' +
+      "<b>" + esc(sch.short) + " · " + esc(String(year)) + " 年整卷</b>" +
+      '<span class="tiny muted">第 ' + (i + 1) + " / " + total + " 页</span></div>";
+    h += '<div class="paperwrap"><img src="assets/zt/' + esc(f) + '" alt="' + esc(String(year)) + " 年第 " + (i + 1) + ' 页" ' +
+      'data-act="zoom" data-src="assets/zt/' + esc(f) + '" data-alt="原卷"></div>';
+    h += '<div class="ptimerbar" id="ptimerbar">' +
+      '<span class="ptimer" id="ptimer">--:--</span>' +
+      '<button class="btn ghost sm" data-act="ptimer">开始计时（3 小时）</button>' +
+      '<button class="btn ghost sm" data-act="ptimer-clear">清零</button></div>';
+    h += '<div class="paperbar">' +
+      '<button class="btn ghost' + (i === 0 ? " dis" : "") + '" data-act="paper-go" data-v="' + (i - 1) + '">‹ 上一页</button>' +
+      '<span class="paperno">' + (i + 1) + " / " + total + "</span>" +
+      '<button class="btn ghost' + (i === total - 1 ? " dis" : "") + '" data-act="paper-go" data-v="' + (i + 1) + '">下一页 ›</button>' +
+      "</div>";
+    if (probs.length) {
+      h += '<div class="card"><div class="h4">这套卷子的题 <span class="tiny muted">' + probs.length + ' 道</span></div>' +
+        '<div class="tiny muted">整套做完再逐题自评，也可以直接点某一题去看它对应的原卷位置。</div>';
+      probs.forEach(function (p) {
+        h += '<button class="exrow" data-act="open-exam" data-s="' + esc(p._school || sch.id) + '" data-v="' + p._i + '">' +
+          '<b>' + esc(p.no || "") + "</b>" +
+          '<span class="exno">' + esc(p.part || "") + "</span>" +
+          '<span class="exbrief tiny muted">' + esc(A.lead(A.plain(p.brief || ""), 20)) + "</span></button>";
+      });
+      h += "</div>";
+    }
+    return h;
+  }
+  A.vPaper = vPaper;
+
   function vExam() {
     var h = "";
     var sch = A.schoolOf(ST.examSchool || "shu");
@@ -1148,7 +1200,7 @@ if (ST.cardOpen) {
     h += '<h3>' + esc(sch.name) + " · " + all.length + " 道真题 · " + ys.length + " 个年份</h3>";
     h += '<div class="tiny muted" style="margin:-2px 0 2px">已自评 ' + doneAll + " / " + all.length + " 道</div>";
     h += '<p class="muted tiny">题干按原卷整理成索引；点「原卷」看当年扫描页，题干和电路图都在上面，改动为零。' +
-      "做题时用三档自评，判分由你自己来。</p>";
+      "做题时用三档自评，判分由你自己来。选好年份后可以「看整卷」，配 3 小时倒计时模拟考场。</p>";
     /* 年份选择条：全放进来，横滑即可 */
     h += '<div class="yearchips">';
     h += '<button class="chip yearchip' + (!ST.examYear ? " on" : "") + '" data-f="year" data-v="0">全部</button>';
@@ -1157,6 +1209,13 @@ if (ST.cardOpen) {
         '" data-f="year" data-v="' + y + '">' + y + "</button>";
     });
     h += "</div>";
+    if (ST.examYear) {
+      var py = A.paperPages(sch.id, ST.examYear);
+      if (py.length) {
+        h += '<button class="btn sm paperbtn" data-act="paper" data-v="' + ST.examYear + '">' +
+          "📄 看 " + ST.examYear + " 年整卷（" + py.length + " 页）</button>";
+      }
+    }
     h += "</div>";
 
     h += examFilterChips();
@@ -1829,6 +1888,7 @@ if (ST.cardOpen) {
   }
 
   function currentView() {
+    if (SUB.paper && SUB.paper.year) return { id: "paper", html: A.vPaper(SUB.paper.year, SUB.paper.i) };
     if (SUB.lesson) return { id: "lesson", html: A.vLesson(SUB.lesson) };
     if (SUB.formula) return { id: "formula", html: A.vFormula() };
     if (SUB.examone >= 0) return { id: "examone", html: A.vExamOne(SUB.examone) };
@@ -2115,6 +2175,9 @@ if (ST.cardOpen) {
   });
   on("open-exam", function (el) {
     SUB.retLesson = SUB.lesson || null;   /* 从讲义点进来的，返回时回讲义 */
+    SUB.retPaper = SUB.paper ? SUB.paper.year : null;  /* 从整卷点进来的，返回时回整卷 */
+    SUB.retPaperIdx = SUB.paper ? SUB.paper.i : 0;
+    SUB.paper = null;
     SUB.lesson = null; SUB.formula = 0;
     SUB.examone = parseInt(el.getAttribute("data-v"), 10);
     SUB.examschool = el.getAttribute("data-s") || ST.examSchool || "shu";
@@ -2122,10 +2185,62 @@ if (ST.cardOpen) {
     render();
     window.scrollTo(0, 0);
   });
+  /* 整卷模式：一年一套卷，翻页看原卷 */
+  on("paper", function (el) {
+    SUB.lesson = null; SUB.formula = 0; SUB.examone = -1;
+    SUB.paper = { year: parseInt(el.getAttribute("data-v"), 10), i: 0 };
+    render();
+    window.scrollTo(0, 0);
+  });
+  on("paper-go", function (el) {
+    if (!SUB.paper) return;
+    var i = parseInt(el.getAttribute("data-v"), 10);
+    var total = A.paperPages(ST.examSchool || "shu", SUB.paper.year).length;
+    if (i < 0 || i >= total) return;
+    SUB.paper.i = i;
+    render();
+    window.scrollTo(0, 0);
+  });
+  on("paper-close", function () { SUB.paper = null; render(); });
+
+  /* 整卷计时：模拟考场，3 小时倒计时，刷新也不丢 */
+  var TIMER_KEY = "kaoyan829.v2.ptimer";
+  function timerMap() { try { return JSON.parse(localStorage.getItem(TIMER_KEY) || "{}") || {}; } catch (e) { return {}; } }
+  function timerEnd(y) { return timerMap()[y] || 0; }
+  function timerSet(y, ts) { var m = timerMap(); m[y] = ts; try { localStorage.setItem(TIMER_KEY, JSON.stringify(m)); } catch (e) { } }
+  function fmtLeft(ms) {
+    if (ms < 0) ms = 0;
+    var s = Math.floor(ms / 1000), hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), ss = s % 60;
+    return (hh < 10 ? "0" : "") + hh + ":" + (mm < 10 ? "0" : "") + mm + ":" + (ss < 10 ? "0" : "") + ss;
+  }
+  function paintTimer() {
+    var el = document.getElementById("ptimer");
+    if (!el || !SUB.paper) return;
+    var y = SUB.paper.year, end = timerEnd(y);
+    if (!end) { el.textContent = "03:00:00"; el.className = "ptimer"; return; }
+    var left = end - Date.now();
+    el.textContent = left > 0 ? fmtLeft(left) : "时间到";
+    el.className = "ptimer" + (left <= 0 ? " over" : (left < 15 * 60 * 1000 ? " warn" : ""));
+  }
+  on("ptimer", function () {
+    if (!SUB.paper) return;
+    var y = SUB.paper.year;
+    if (timerEnd(y)) { timerSet(y, 0); A.toast("已清零"); }
+    else { timerSet(y, Date.now() + 3 * 3600 * 1000); A.toast("开始计时，3 小时"); }
+    paintTimer();
+    render();
+  });
+  on("ptimer-clear", function () {
+    if (!SUB.paper) return;
+    timerSet(SUB.paper.year, 0); render(); A.toast("已清零");
+  });
+  setInterval(paintTimer, 1000);
+
   on("exam-back", function () {
-    var back = SUB.retLesson;
-    SUB.examone = -1; SUB.retLesson = null;
+    var back = SUB.retLesson, bp = SUB.retPaper;
+    SUB.examone = -1; SUB.retLesson = null; SUB.retPaper = null;
     if (back) { openLesson(back); return; }
+    if (bp) { SUB.paper = { year: bp, i: SUB.retPaperIdx || 0 }; SUB.retPaperIdx = 0; render(); return; }
     render();
   });
   on("grade-exam", function (el) {
