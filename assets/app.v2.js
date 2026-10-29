@@ -1420,8 +1420,12 @@ if (ST.cardOpen) {
     h += '<div class="yearchips">';
     h += '<button class="chip yearchip' + (!ST.examYear ? " on" : "") + '" data-f="year" data-v="0">全部</button>';
     ys.forEach(function (y) {
+      var arr = years[y] || [];
+      var dn = arr.filter(function (p) { return A.examDone(p.id); }).length;
       h += '<button class="chip yearchip' + (Number(ST.examYear) === y ? " on" : "") +
-        '" data-f="year" data-v="' + y + '">' + y + "</button>";
+        '" data-f="year" data-v="' + y + '">' + y +
+        '<i class="yc-n">' + arr.length + "</i>" +
+        (dn >= arr.length ? '<i class="yc-ok">✓</i>' : "") + "</button>";
     });
     h += "</div>";
     if (ST.examYear) {

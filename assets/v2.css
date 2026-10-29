@@ -307,6 +307,8 @@ main{max-width:760px;margin:0 auto;padding:14px 14px 26px}
   scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .yearchips::-webkit-scrollbar{display:none}
 .yearchip{flex:none;font-variant-numeric:tabular-nums;letter-spacing:.2px}
+.yc-n{font-style:normal;font-size:9px;opacity:.55;margin-left:2px;vertical-align:top}
+.yc-ok{font-style:normal;color:#2e8b57;margin-left:1px}
 .examyear{padding:12px 14px}
 .eyhead{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .eyhead b{font-size:15px}
