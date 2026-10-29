@@ -446,9 +446,44 @@
   });
   window.KPMAP = KPMAP;
 
-  var LESSONS = (window.LESSONS || []).slice();
+  var LESSONS = (window.LESSONS_META || window.LESSONS || []).slice();
   var LESSON_MAP = {};
   LESSONS.forEach(function (l) { LESSON_MAP[l.id] = l; });
+
+  /* 讲义正文是按科目懒加载的大文件（电路 200KB / 信号 400KB），首屏只带 meta */
+  var LSRC = ["data/lessons_body_circuit.js", "data/lessons_body_signal.js"];
+  var L_LOADING = false, L_CB = [], L_FAIL = 0;
+  A.lessonsReady = function () {
+    if (!LESSONS.length) return true;
+    for (var i = 0; i < LESSONS.length; i++) if (!LESSONS[i].md) return false;
+    return true;
+  };
+  A.ensureLessons = function (cb) {
+    if (A.lessonsReady()) { if (cb) cb(); return; }
+    if (cb) L_CB.push(cb);
+    if (L_LOADING) return;
+    L_LOADING = true;
+    var i = 0;
+    (function next() {
+      if (i >= LSRC.length) {
+        L_LOADING = false;
+        var B = window.LESSONS_BODY || {};
+        LESSONS.forEach(function (l) { if (!l.md && B[l.id]) l.md = B[l.id]; });
+        var cbs = L_CB.splice(0);
+        cbs.forEach(function (f) { try { f(); } catch (e) { } });
+        return;
+      }
+      var s = document.createElement("script");
+      s.src = LSRC[i++]; s.async = false;
+      s.onload = next;
+      s.onerror = function () {
+        L_LOADING = false; L_FAIL++;
+        if (A.toast) A.toast("讲义正文加载失败，检查网络后重试");
+        var cbs = L_CB.splice(0); cbs.forEach(function (f) { try { f(); } catch (e) { } });
+      };
+      document.head.appendChild(s);
+    })();
+  };
 
   A.QS = QS; A.QMAP = QMAP; A.EXAMS = EXAMS; A.EPROB = EPROB;
   A.SCHOOLS = SCHOOLS; A.schoolOf = schoolOf; A.GUETPROB = GUETPROB;
@@ -785,6 +820,7 @@
   function lessonSearch(q) {
     q = String(q || "").trim().toLowerCase();
     if (q.length < 1) return [];
+    if (!A.lessonsReady()) { A.ensureLessons(null); return []; }
     var out = [];
     (A.LESSONS || []).forEach(function (l) {
       var s = mdPlain(l.md), low = s.toLowerCase();
@@ -1859,6 +1895,10 @@ if (ST.cardOpen) {
     h += '<div id="lslist">';
     /* 有关键词：走全文搜索，按命中次数排，带前后文 */
     if (q) {
+      if (!A.lessonsReady()) {
+        A.ensureLessons(function () { if (A.render) A.render(); });
+        return h + '<div class="empty">正在加载讲义正文，加载完会自动搜「' + esc(A.ST.lq) + '」…</div></div>';
+      }
       var hits = A.lessonSearch(q).filter(function (x) { return !subj || x.subject === subj; });
       if (!hits.length) return h + '<div class="empty">讲义里没找到「' + esc(A.ST.lq) + '」。试试更短的词，或者去考点页搜。</div></div>';
       var total = hits.reduce(function (a, b) { return a + b.n; }, 0);
@@ -1883,7 +1923,7 @@ if (ST.cardOpen) {
       h += '<div class="chhead"><b>' + esc(k) + "</b><span class='tiny muted'>" + groups[k].length +
         " 讲" + (rd ? " · 已读 " + rd : "") + "</span></div>";
       groups[k].forEach(function (l) {
-        var words = l.md ? String(l.md).length : 0;
+        var words = l.md ? String(l.md).length : (l.chars || 0);
         var sum = (l.summary || "").trim();
         h += '<div class="lessonrow" data-act="lesson" data-v="' + esc(l.id) + '">' +
           '<div class="lt">' + esc(l.title) + (A.isRead(l.id) ? '<span class="readmark">✓</span>' : "") +
@@ -2229,6 +2269,12 @@ if (ST.cardOpen) {
   function vLesson(id) {
     var L = A.LESSON_MAP[id];
     if (!L) return '<div class="empty">没找到这一讲。</div>';
+    if (!L.md) {
+      A.ensureLessons(function () { if (A.render) A.render(); });
+      return '<div class="lsbar"><button class="btn ghost sm" data-act="lesson-back">‹ 讲义</button></div>' +
+        '<div class="card"><div class="h4">' + esc(L.title) + '</div>' +
+        '<div class="tiny muted">正在加载这一讲…（第一次打开讲义要下载正文，之后就存在手机里了）</div></div>';
+    }
     var sib = A.LESSONS.filter(function (x) { return x.subject === L.subject; });
     var k = sib.indexOf(L);
     var prev = k > 0 ? sib[k - 1] : null;
@@ -2474,6 +2520,14 @@ if (ST.cardOpen) {
   });
   on("find-lesson", function (el) {
     var k = el.getAttribute("data-v");
+    if (!A.lessonsReady()) {
+      A.ensureLessons(function () {
+        var l = document.querySelector('[data-act=find-lesson][data-v="' + k + '"]');
+        if (l) l.click();
+      });
+      A.toast("正在加载讲义…");
+      return;
+    }
     var hit = A.LESSONS.filter(function (l) { return String(l.md || "").indexOf(k) >= 0; });
     if (!hit.length) { A.toast("这一讲的讲义里没单独写它，去题库练更直接", "warn"); return; }
     ST.noteTab = "lesson"; ST.lq = hit[0].title.slice(0, 6);
