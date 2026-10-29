@@ -60,14 +60,5 @@
 <script defer src="data/kp_talk.js"></script>
 <script defer src="data/formulas.js"></script>
 <script defer src="assets/app.v2.js"></script>
-<script>
-(function () {
-  if (!("serviceWorker" in navigator)) return;
-  if (location.protocol === "file:") return;
-  window.addEventListener("load", function () {
-    navigator.serviceWorker.register("sw.js", { scope: "./" }).catch(function () { });
-  });
-})();
-</script>
 </body>
 </html>

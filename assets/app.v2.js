@@ -1895,6 +1895,24 @@ if (ST.cardOpen) {
     window.scrollTo(0, y);
   });
 
+  /* 新版本提示：站点更新后告诉用户刷一下 */
+  (function () {
+    try {
+      if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
+      navigator.serviceWorker.register("sw.js", { scope: "./" }).then(function (reg) {
+        reg.addEventListener("updatefound", function () {
+          var nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener("statechange", function () {
+            if (nw.state === "installed" && navigator.serviceWorker.controller) {
+              A.toast("有新版本，下拉刷新即可更新", "ok");
+            }
+          });
+        });
+      }).catch(function () { });
+    } catch (e) { }
+  })();
+
   /* 记住讲义读到哪 */
   var PT = null;
   window.addEventListener("scroll", function () {
