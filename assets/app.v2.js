@@ -755,6 +755,39 @@
   A.setWhy = setWhy; A.whyStats = whyStats;
   A.markRead = markRead; A.isRead = isRead; A.readCount = readCount; A.posGet = posGet; A.posSet = posSet; A.master = master; A.unmaster = unmaster; A.toggleStar = toggleStar;
   A.hlList = hlList; A.hlCount = hlCount; A.hlAdd = hlAdd; A.hlDel = hlDel;
+
+  /* 讲义全文搜索：把 md 去掉符号后找关键词，返回命中处数与前后文 */
+  function mdPlain(s) {
+    return String(s || "")
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/[#>*`_~|]/g, " ")
+      .replace(/\s+/g, " ");
+  }
+  function lessonSearch(q) {
+    q = String(q || "").trim().toLowerCase();
+    if (q.length < 1) return [];
+    var out = [];
+    (A.LESSONS || []).forEach(function (l) {
+      var s = mdPlain(l.md), low = s.toLowerCase();
+      var at = low.indexOf(q);
+      if (at < 0) return;
+      var n = 0, p = 0;
+      while (at >= 0 && n < 999) { n++; p = at + q.length; at = low.indexOf(q, p); }
+      var snip = [], k = 0, pos = 0;
+      while (snip.length < 2) {
+        var i2 = low.indexOf(q, pos);
+        if (i2 < 0) break;
+        var st = Math.max(0, i2 - 26), en = Math.min(s.length, i2 + q.length + 32);
+        snip.push((st > 0 ? "…" : "") + s.slice(st, en).trim() + (en < s.length ? "…" : ""));
+        pos = i2 + q.length;
+      }
+      out.push({ id: l.id, title: l.title, subject: l.subject, n: n, snip: snip });
+    });
+    out.sort(function (a, b) { return b.n - a.n; });
+    return out;
+  }
+  A.mdPlain = mdPlain; A.lessonSearch = lessonSearch;
   A.dueList = dueList; A.dueCount = function () { return dueList().length; };
   A.todayQueue = todayQueue; A.todayLog = todayLog; A.streak = streak;
   A.progress = progress; A.totalN = totalN; A.dailyQ = dailyQ;
@@ -1687,13 +1720,25 @@ if (ST.cardOpen) {
     var q = (A.ST.lq || "").trim().toLowerCase();
     var h = '<input class="search" id="lssearch" placeholder="搜讲义标题 / 内容" value="' + esc(A.ST.lq || "") + '">';
     h += '<div id="lslist">';
+    /* 有关键词：走全文搜索，按命中次数排，带前后文 */
+    if (q) {
+      var hits = A.lessonSearch(q).filter(function (x) { return !subj || x.subject === subj; });
+      if (!hits.length) return h + '<div class="empty">讲义里没找到「' + esc(A.ST.lq) + '」。试试更短的词，或者去考点页搜。</div></div>';
+      var total = hits.reduce(function (a, b) { return a + b.n; }, 0);
+      h += '<div class="tiny muted" style="margin:2px 0 8px">' + hits.length + " 讲里共命中 " + total + " 处</div>";
+      hits.forEach(function (x) {
+        h += '<div class="lessonrow hitrow" data-act="lesson" data-v="' + esc(x.id) + '" data-q="' + esc(A.ST.lq) + '">' +
+          '<div class="lt">' + esc(x.title) + '<span class="tiny hln">命中 ' + x.n + " 处</span></div>";
+        x.snip.forEach(function (s) {
+          h += '<div class="ls hitline">' + esc(s) + "</div>";
+        });
+        h += "</div>";
+      });
+      return h + "</div>";
+    }
     var groups = {};
     A.LESSONS.forEach(function (l) {
       if (subj && l.subject !== subj) return;
-      if (q) {
-        var hay = (l.title + " " + (l.summary || "") + " " + l.subject).toLowerCase();
-        if (hay.indexOf(q) < 0) return;
-      }
       (groups[l.subject || "其他"] = groups[l.subject || "其他"] || []).push(l);
     });
     Object.keys(groups).forEach(function (k) {
@@ -2254,12 +2299,41 @@ if (ST.cardOpen) {
     window.scrollTo(0, 0);
   }
 
+  /* 讲义全文搜索命中处染色，返回第一个命中元素 */
+  function findHighlight(q) {
+    var root = document.querySelector(".lessonpage");
+    if (!root || !q) return null;
+    var low = q.toLowerCase(), first = null, nodes = [];
+    var w = document.createTreeWalker(root, 4, null), n;
+    while ((n = w.nextNode())) nodes.push(n);
+    nodes.forEach(function (node) {
+      var v = node.nodeValue || "", i = v.toLowerCase().indexOf(low);
+      if (i < 0) return;
+      var before = v.slice(0, i), mid = v.slice(i, i + q.length), after = v.slice(i + q.length);
+      var mk = document.createElement("mark");
+      mk.className = "findhl";
+      mk.textContent = mid;
+      var p = node.parentNode;
+      if (before) p.insertBefore(document.createTextNode(before), node);
+      p.insertBefore(mk, node);
+      if (after) p.insertBefore(document.createTextNode(after), node);
+      p.removeChild(node);
+      if (!first) first = mk;
+    });
+    return first;
+  }
+
   on("lesson", function (el) {
     var id = el.getAttribute("data-v");
+    var q = (el.getAttribute("data-q") || "").trim();
     SUB.lesson = id;
     A.markRead(id);
     render();
-    window.scrollTo(0, A.posGet(id));
+    if (q) {
+      var m = findHighlight(q);
+      if (m) m.scrollIntoView({ block: "center" });
+      else window.scrollTo(0, A.posGet(id));
+    } else window.scrollTo(0, A.posGet(id));
   });
   on("lesson-back", function () { SUB.lesson = null; render(); window.scrollTo(0, 0); });
 
