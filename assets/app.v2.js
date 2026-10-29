@@ -1676,6 +1676,24 @@ if (ST.cardOpen) {
     }
     h += "</div>";
 
+    /* AI 答疑（可选） */
+    var hasKey = false;
+    try { hasKey = !!localStorage.getItem("kaoyan829.aikey"); } catch (e) { }
+    h += '<div class="card"><div class="h4">AI 答疑 <span class="tiny muted">' + (hasKey ? "已设置 Key" : "未设置（可选）") + "</span></div>";
+    if (hasKey) {
+      h += '<div class="tiny muted">刷题时右下角 ✦ 就能问，会带上当前这道题。回答只花你自己的额度。</div>' +
+        '<div class="row"><button class="btn sm" data-act="askai">打开问 AI</button></div>';
+    } else {
+      h += '<ol class="ailist">' +
+        "<li>打开 platform.deepseek.com 注册，实名后送一点额度（够问很多题）。</li>" +
+        "<li>左侧「API keys」→ 新建，复制以 sk- 开头的那串。</li>" +
+        "<li>回到本页右下角 ✦，把 Key 粘进去点保存，只存在这台手机上。</li>" +
+        "</ol>" +
+        '<div class="tiny muted">不想弄 Key 也完全不影响做题，只是没有 AI 讲解。</div>' +
+        '<div class="row"><button class="btn ghost sm" data-act="askai">我先看看长什么样</button></div>';
+    }
+    h += "</div>";
+
     /* 数据管理 */
     h += '<div class="card"><div class="h4">设置</div>' +
       '<div class="cfgrow"><label for="cfgd">考试日期</label>' +
@@ -1717,7 +1735,26 @@ if (ST.cardOpen) {
         var kp = A.KPMAP[k] || {};
         h += '<button class="chip" data-act="drill-kp" data-v="' + esc(k) + '">' + esc(kp.name || k) + "</button>";
       });
-      h += '</div><div class="tiny muted">点考点直接去练这个考点。</div></div>';
+      h += '</div><div class="tiny muted">点考点直接去练这个考点。</div>';
+      /* 本讲相关的真题：直接翻到原卷那一页 */
+      var hits = [];
+      (A.EPROB || []).forEach(function (p, i) {
+        var ks = p.kp || [], hit = false;
+        for (var j = 0; j < ks.length; j++) if (kps.indexOf(ks[j]) >= 0) { hit = true; break; }
+        if (hit) hits.push({ i: i, p: p });
+      });
+      if (hits.length) {
+        h += '<div class="h4" style="margin-top:12px">本讲考过的真题 <span class="tiny muted">' + hits.length + ' 道</span></div>';
+        hits.slice(0, 8).forEach(function (x) {
+          h += '<button class="exrow" data-act="open-exam" data-v="' + x.i + '" data-s="shu">' +
+            '<b>' + esc(String(x.p.year)) + "</b>" +
+            '<span class="exno">' + esc(x.p.no || "") + "</span>" +
+            '<span class="exbrief tiny muted">' + esc(A.lead(A.plain(x.p.brief || ""), 24)) + "</span>" +
+            "</button>";
+        });
+        if (hits.length > 8) h += '<div class="tiny muted">只列最近 8 道，去「真题」页按年份、考点筛更多。</div>';
+      }
+      h += "</div>";
     }
     h += '<div class="row" style="margin-top:18px">';
     if (prev) h += '<button class="btn ghost" data-act="lesson" data-v="' + esc(prev.id) + '">‹ ' + esc(A.lead(prev.title, 12)) + "</button>";
@@ -2036,13 +2073,20 @@ if (ST.cardOpen) {
     ST.examType = ""; ST.examPart = ""; ST.examDiff = ""; ST.examHot = 0; render();
   });
   on("open-exam", function (el) {
+    SUB.retLesson = SUB.lesson || null;   /* 从讲义点进来的，返回时回讲义 */
+    SUB.lesson = null; SUB.formula = 0;
     SUB.examone = parseInt(el.getAttribute("data-v"), 10);
     SUB.examschool = el.getAttribute("data-s") || ST.examSchool || "shu";
     ST.examSchool = SUB.examschool;
     render();
     window.scrollTo(0, 0);
   });
-  on("exam-back", function () { SUB.examone = -1; render(); });
+  on("exam-back", function () {
+    var back = SUB.retLesson;
+    SUB.examone = -1; SUB.retLesson = null;
+    if (back) { openLesson(back); return; }
+    render();
+  });
   on("grade-exam", function (el) {
     var i = parseInt(el.getAttribute("data-v"), 10);
     var g = el.getAttribute("data-g");
