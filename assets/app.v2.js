@@ -1043,6 +1043,10 @@
       if (p) h += '<span class="tag">' + esc(p.name.length > 12 ? p.name.slice(0, 12) + "…" : p.name) + "</span>";
     });
     if (q.source) h += '<span class="tag y">' + esc(q.source) + "</span>";
+    /* 这道题的考点在真题里考过几次（只对高频才显示，避免噪音） */
+    var fqMax = 0;
+    (q.kp || []).forEach(function (k) { var n = A.FREQ10[k] || 0; if (n > fqMax) fqMax = n; });
+    if (fqMax >= 2) h += '<span class="tag hot" title="近十年真题里这个考点出现的次数">近十年考 ' + fqMax + " 次</span>";
     h += '<span class="tag d" title="难度 ' + esc(A.num(q.difficulty, 3)) + '">' + diffStars(q.difficulty) + "</span>";
     h += '<button class="starbtn' + (A.isStar(q.id) ? " on" : "") + '" data-act="star" data-v="' + esc(q.id) + '" title="收藏这道题">' +
       (A.isStar(q.id) ? "★" : "☆") + "</button>";
@@ -1470,6 +1474,26 @@ if (ST.cardOpen) {
       (i < lst.length - 1 ? '<button class="btn ghost sm" data-act="open-exam" data-v="' + (i + 1) + '">下一题 ›</button>' : "") +
       '<span class="tiny muted" style="margin-left:auto">' + (i + 1) + " / " + lst.length + "</span></div>";
     h += "</div>";
+
+    /* 同考点的其他真题：把这个考点的历年考法一次看完 */
+    var rel = [];
+    lst.forEach(function (x, j) {
+      if (j === i || x.year === p.year) return;
+      var hit = (x.kp || []).some(function (k) { return (p.kp || []).indexOf(k) >= 0; });
+      if (hit) rel.push({ i: j, p: x });
+    });
+    rel.sort(function (a, b) { return Number(b.p.year) - Number(a.p.year); });
+    if (rel.length) {
+      h += '<div class="card relbox"><div class="h4">同考点真题 <span class="tiny muted">' + rel.length + " 道</span></div>";
+      rel.slice(0, 8).forEach(function (x) {
+        h += '<button class="exrow" data-act="open-exam" data-v="' + x.i + '">' +
+          "<b>" + esc(String(x.p.year)) + "</b>" +
+          '<span class="exno">' + esc(x.p.no || "") + "</span>" +
+          '<span class="exbrief tiny muted">' + esc(A.lead(x.p.brief || "", 22)) + "</span></button>";
+      });
+      if (rel.length > 8) h += '<div class="tiny muted">只列最近 8 道，用上面的考点条筛全部。</div>';
+      h += "</div>";
+    }
     return h;
   }
   A.vExamOne = vExamOne;
