@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f2937">
+<title>829 训练台 · 电路 + 信号</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231f2937'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle' fill='%23fff' font-family='monospace'%3E%E2%88%91%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="assets/ai.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">829 <span>训练台</span></div>
+  <div class="topright">
+    <div class="countdown" id="countdown"></div>
+    <button class="themebtn" id="themeBtn" title="深色 / 浅色">◐</button>
+  </div>
+</header>
+
+<main id="view" class="view"></main>
+
+<nav class="tabbar">
+  <button class="tab" data-tab="today"><span class="ico">◎</span><span>今日</span></button>
+  <button class="tab" data-tab="drill"><span class="ico">✎</span><span>刷题</span></button>
+  <button class="tab" data-tab="notes"><span class="ico">▤</span><span>讲义</span></button>
+  <button class="tab" data-tab="wrong"><span class="ico">✗</span><span>错题</span></button>
+  <button class="tab" data-tab="stats"><span class="ico">◔</span><span>统计</span></button>
+</nav>
+
+<input type="file" id="importFile" accept="application/json,.json" hidden>
+
+<button class="topbtn" id="topBtn" title="回到顶部">↑</button>
+
+<button class="fab" id="fab" title="问 AI">✦</button>
+
+<aside class="ai" id="ai">
+  <div class="ai-head">
+    <div class="ai-title">AI 助教<span class="ai-model" id="aiModel">未配置</span></div>
+    <div class="ai-acts">
+      <button class="ai-icon" id="aiCfg" title="接口设置">⚙</button>
+      <button class="ai-icon" id="aiClear" title="清空对话">⟲</button>
+      <button class="ai-icon ai-close" id="aiClose" title="收起">✕</button>
+    </div>
+  </div>
+  <div class="ai-body" id="aiBody"></div>
+  <div class="ai-quick" id="aiQuick">
+    <button data-q="这题考的是哪个知识点？在考纲里属于第几章？">考什么</button>
+    <button data-q="这题最容易错在哪一步？">易错点</button>
+    <button data-q="有没有更快的解法或者可以记住的结论？">巧解</button>
+    <button data-q="用一句话总结这类题的通用套路。">套路</button>
+  </div>
+  <form class="ai-compose" id="aiForm">
+    <textarea id="aiInput" rows="1" placeholder="问点什么…"></textarea>
+    <button type="submit" class="ai-send" id="aiSend">↑</button>
+  </form>
+</aside>
+
+<script src="assets/katex/katex.min.js"></script>
+<script src="data/kp_signal.js"></script>
+<script src="data/kp_circuit.js"></script>
+<script src="data/q_signal.js"></script>
+<script src="data/q_signal2.js"></script>
+<script src="data/q_signal3.js"></script>
+<script src="data/q_signal4.js"></script>
+<script src="data/q_signal5.js"></script>
+<script src="data/q_signal6.js"></script>
+<script src="data/lessons.js"></script>
+<script src="data/lessons_signal.js"></script>
+<script src="data/questions.js"></script>
+<script src="data/q_circuit2.js"></script>
+<script src="data/q_circuit3.js"></script>
+<script src="data/q_circuit4.js"></script>
+<script src="data/exams.js"></script>
+<script src="assets/app.js"></script>
+<script src="assets/ai.js"></script>
+</body>
+</html>
