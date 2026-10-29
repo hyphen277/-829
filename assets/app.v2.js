@@ -430,6 +430,18 @@
   A.SCHOOLS = SCHOOLS; A.schoolOf = schoolOf; A.GUETPROB = GUETPROB;
   A.SUBJ = SUBJ; A.KPMAP = KPMAP; A.KPLIST = KPLIST; A.LESSONS = LESSONS; A.LESSON_MAP = LESSON_MAP;
 
+  /* 考点 ↔ 讲义 */
+  var KP_LESSON = window.KP_LESSON || {};
+  var LESSON_KPS = {};
+  Object.keys(KP_LESSON).forEach(function (k) {
+    var lid = KP_LESSON[k];
+    (LESSON_KPS[lid] = LESSON_KPS[lid] || []).push(k);
+  });
+  A.KP_LESSON = KP_LESSON;
+  A.LESSON_KPS = LESSON_KPS;
+  A.lessonOfKp = function (k) { return KP_LESSON[k] || null; };
+  A.kpsOfLesson = function (id) { return LESSON_KPS[id] || []; };
+
   /* 考频：这套卷子里该考点出现过几次（近 10 年单列） */
   var FREQ = {}, FREQ10 = {}, TYPE_OF_KP = {};
   EPROB.forEach(function (p) {
@@ -1698,6 +1710,15 @@ if (ST.cardOpen) {
       '<button class="fsb" data-act="fs" data-v="1">A+</button></span>' +
       (A.isRead(L.id) ? '<span class="tiny muted">✓ 已读</span>' : "") + "</div>";
     h += '<article class="lessonpage fs' + (A.DB.fs || 0) + '">' + md(L.md) + "</article>";
+    var kps = A.kpsOfLesson(L.id);
+    if (kps.length) {
+      h += '<div class="card" style="margin-top:14px"><div class="h4">本讲对应考点</div><div class="chips">';
+      kps.forEach(function (k) {
+        var kp = A.KPMAP[k] || {};
+        h += '<button class="chip" data-act="drill-kp" data-v="' + esc(k) + '">' + esc(kp.name || k) + "</button>";
+      });
+      h += '</div><div class="tiny muted">点考点直接去练这个考点。</div></div>';
+    }
     h += '<div class="row" style="margin-top:18px">';
     if (prev) h += '<button class="btn ghost" data-act="lesson" data-v="' + esc(prev.id) + '">‹ ' + esc(A.lead(prev.title, 12)) + "</button>";
     if (next) h += '<button class="btn ghost" data-act="lesson" data-v="' + esc(next.id) + '">' + esc(A.lead(next.title, 12)) + " ›</button>";
@@ -1874,6 +1895,14 @@ if (ST.cardOpen) {
     ST.noteTab = "lesson"; ST.lq = hit[0].title.slice(0, 6);
     SUB.lesson = hit[0].id; render();
   });
+  function openLesson(id) {
+    go("notes");              /* go 会清空 SUB，必须先 go 再设 */
+    SUB.lesson = id;
+    A.markRead(id);
+    render();
+    window.scrollTo(0, 0);
+  }
+
   on("lesson", function (el) {
     var id = el.getAttribute("data-v");
     SUB.lesson = id;
@@ -2033,11 +2062,16 @@ if (ST.cardOpen) {
     var name = p.name || k;
     var fq10 = A.FREQ10[k] || 0;
     var n = A.kpCount(k);
-    A.ask("【" + name + "】近十年真题考了 " + fq10 + " 次，本考点有 " + n + " 道练习题。去练这个考点？",
+    var lid = A.lessonOfKp(k);
+    var extra = lid && A.LESSON_MAP[lid]
+      ? [{ t: "先看讲义", fn: function () { openLesson(lid); } }]
+      : [];
+    A.ask("【" + name + "】近十年真题考了 " + fq10 + " 次，本考点有 " + n + " 道练习题。" +
+      (extra.length ? "\n对应讲义：" + A.LESSON_MAP[lid].title : "") + "去练这个考点？",
       function () {
         ST.flt.mode = "kp"; ST.flt.kp = k; ST.flt.subject = ""; ST.pin = null;
         go("drill");
-      }, "去练");
+      }, "去练", extra);
   });
 
   /* 图片放大 */
@@ -2048,13 +2082,17 @@ if (ST.cardOpen) {
   on("theme", function () { A.applyTheme(A.THEME() === "dark" ? "light" : "dark"); });
 
   /* ---------- 站内确认框（替掉原生 confirm，手机上更稳） ---------- */
-  function ask(msg, okFn, okText) {
+  function ask(msg, okFn, okText, extras) {
     var old = $("#asksheet"); if (old && old.remove) old.remove();
     var d = document.createElement("div");
     d.id = "asksheet";
     d.className = "asksheet";
+    var ex = "";
+    (extras || []).forEach(function (x, i) {
+      ex += '<button class="btn ghost" data-extra="' + i + '">' + esc(x.t) + "</button>";
+    });
     d.innerHTML = '<div class="askbox"><p>' + esc(msg) + "</p>" +
-      '<div class="askbtns"><button class="btn ghost" data-ask="0">取消</button>' +
+      '<div class="askbtns"><button class="btn ghost" data-ask="0">取消</button>' + ex +
       '<button class="btn primary" data-ask="1">' + esc(okText || "确定") + "</button></div></div>";
     document.body.appendChild(d);
     d.addEventListener("click", function (e) {
@@ -2065,6 +2103,15 @@ if (ST.cardOpen) {
       e.stopPropagation();
       d.remove();
       if (b.getAttribute("data-ask") === "1" && okFn) okFn();
+    });
+    d.addEventListener("click", function (e) {
+      var b = e.target.closest ? e.target.closest("[data-extra]") : null;
+      if (!b) return;
+      e.preventDefault(); e.stopPropagation();
+      var i = parseInt(b.getAttribute("data-extra"), 10);
+      d.remove();
+      var x = (extras || [])[i];
+      if (x && x.fn) x.fn();
     });
   }
   A.ask = ask;
