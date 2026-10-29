@@ -1,0 +1,17 @@
+{
+  "name": "829 训练台 · 电路 + 信号",
+  "short_name": "829 训练台",
+  "description": "上海大学 829 电路与信号系统备考：真题原卷、考点精练、艾宾浩斯复习、错题重测",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f5f2",
+  "theme_color": "#2c5f8a",
+  "icons": [
+    { "src": "assets/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
