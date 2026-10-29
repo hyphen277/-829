@@ -478,7 +478,11 @@
       s.onload = next;
       s.onerror = function () {
         L_LOADING = false; L_FAIL++;
-        if (A.toast) A.toast("讲义正文加载失败，检查网络后重试");
+        if (A.toast) {
+          A.toast(navigator.onLine === false
+            ? "现在没网，这一讲的正文还没缓存过；连上网再打开一次就会存下来"
+            : "讲义正文加载失败，检查网络后重试");
+        }
         var cbs = L_CB.splice(0); cbs.forEach(function (f) { try { f(); } catch (e) { } });
       };
       document.head.appendChild(s);
@@ -3234,6 +3238,16 @@ if (ST.cardOpen) {
     A.applyTheme(th);
     render();
     setInterval(function () { A.tick();  }, 1000);
+    /* 空闲时把讲义正文悄悄拉下来：首屏不背这个包，但断网时讲义也能看 */
+    setTimeout(function () {
+      try {
+        var c = navigator.connection || {};
+        if (c.saveData || /(^|-)2g$/i.test(c.effectiveType || "")) return;
+        if (typeof requestIdleCallback === "function") {
+          requestIdleCallback(function () { A.ensureLessons(null); }, { timeout: 8000 });
+        } else { A.ensureLessons(null); }
+      } catch (e) { }
+    }, 4000);
     /* 数据只在本地：第一次来给个提醒 */
     try {
       if (!localStorage.getItem("kaoyan829.tip")) {
