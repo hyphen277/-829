@@ -788,6 +788,33 @@
     return out;
   }
   A.mdPlain = mdPlain; A.lessonSearch = lessonSearch;
+
+  /* 全站搜索：一个框同时搜题库 / 真题 / 考点 / 讲义 */
+  function gsearch(q) {
+    q = String(q || "").trim();
+    var out = { q: q, qs: [], exams: [], kps: [], lessons: [], n: 0 };
+    if (q.length < 1) return out;
+    var low = q.toLowerCase(), i, o;
+    for (i = 0; i < (A.QS || []).length && out.qs.length < 8; i++) {
+      o = A.QS[i];
+      var hay = (o.stem || "") + " " + (o.solution || "") + " " + (o.subject || "") + " " +
+        (o.kp || []).map(function (k) { var p = A.KPMAP[k]; return p ? p.name : k; }).join(" ");
+      if (hay.toLowerCase().indexOf(low) >= 0) out.qs.push(o);
+    }
+    for (i = 0; i < (A.EPROB || []).length && out.exams.length < 6; i++) {
+      o = A.EPROB[i];
+      var eh = String(o.year) + " " + (o.no || "") + " " + (o.brief || "") + " " + (o.kp || []).join(" ");
+      if (eh.toLowerCase().indexOf(low) >= 0) out.exams.push({ i: i, p: o });
+    }
+    for (i = 0; i < (A.KPLIST || []).length && out.kps.length < 6; i++) {
+      o = A.KPLIST[i];
+      if (((o.name || "") + " " + (o.id || "")).toLowerCase().indexOf(low) >= 0) out.kps.push(o);
+    }
+    out.lessons = lessonSearch(q).slice(0, 4);
+    out.n = out.qs.length + out.exams.length + out.kps.length + out.lessons.length;
+    return out;
+  }
+  A.gsearch = gsearch;
   A.dueList = dueList; A.dueCount = function () { return dueList().length; };
   A.todayQueue = todayQueue; A.todayLog = todayLog; A.streak = streak;
   A.progress = progress; A.totalN = totalN; A.dailyQ = dailyQ;
@@ -1463,10 +1490,62 @@ if (ST.cardOpen) {
   var esc = A.esc, md = A.md, plain = A.plain, $ = A.$;
 
   /* ---------- 今日 ---------- */
+  /* 全站搜索结果 */
+  function gsearchHTML(q) {
+    var r = A.gsearch(q), h = "";
+    if (!r.n) {
+      return '<div class="card"><div class="empty">没搜到「' + esc(q) + "」。<br>换个更短的词试试：戴维南、奈奎斯特、采样定理。</div></div>";
+    }
+    if (r.kps.length) {
+      h += '<div class="card"><div class="h4">考点 <span class="tiny muted">' + r.kps.length + " 个</span></div><div class=\"chips\">";
+      r.kps.forEach(function (k) {
+        h += '<button class="chip" data-act="gs-kp" data-v="' + esc(k.id) + '">' + esc(k.name || k.id) + "</button>";
+      });
+      h += "</div></div>";
+    }
+    if (r.qs.length) {
+      h += '<div class="card"><div class="h4">题库 <span class="tiny muted">' + r.qs.length + " 道</span></div>";
+      r.qs.forEach(function (o) {
+        var kn = (o.kp || []).map(function (k) { var p = A.KPMAP[k]; return p ? p.name : k; }).join(" / ");
+        h += '<div class="lessonrow" data-act="gs-q" data-v="' + esc(o.id) + '">' +
+          '<div class="lt">' + esc(A.lead(A.plain(o.stem || ""), 34)) + "</div>" +
+          '<div class="ls">' + esc(kn || o.subject || "") + "</div></div>";
+      });
+      h += "</div>";
+    }
+    if (r.exams.length) {
+      h += '<div class="card"><div class="h4">真题 <span class="tiny muted">' + r.exams.length + " 道</span></div>";
+      r.exams.forEach(function (x) {
+        h += '<button class="exrow" data-act="gs-exam" data-v="' + x.i + '" data-s="shu">' +
+          "<b>" + esc(String(x.p.year)) + "</b>" +
+          '<span class="exno">' + esc(x.p.no || "") + "</span>" +
+          '<span class="exbrief tiny muted">' + esc(A.lead(A.plain(x.p.brief || ""), 26)) + "</span></button>";
+      });
+      h += "</div>";
+    }
+    if (r.lessons.length) {
+      h += '<div class="card"><div class="h4">讲义 <span class="tiny muted">' + r.lessons.length + " 讲</span></div>";
+      r.lessons.forEach(function (x) {
+        h += '<div class="lessonrow hitrow" data-act="gs-lesson" data-v="' + esc(x.id) + '" data-q="' + esc(q) + '">' +
+          '<div class="lt">' + esc(x.title) + '<span class="tiny hln">命中 ' + x.n + " 处</span></div>" +
+          '<div class="ls hitline">' + esc(x.snip[0] || "") + "</div></div>";
+      });
+      h += "</div>";
+    }
+    return h;
+  }
+
   function vToday() {
     var t = A.todayStr(), L = A.todayLog(), due = A.dueCount();
     var tot = A.totalN(), pr = A.progress(), sk = A.streak();
     var h = "";
+
+    /* 全站搜索：一个框搜题库 / 真题 / 考点 / 讲义 */
+    var gq = (A.ST.gq || "").trim();
+    h += '<div class="card gscard">' +
+      '<input class="search" id="gsearch" placeholder="全站搜：题干 / 考点 / 真题 / 讲义" value="' + esc(A.ST.gq || "") + '">' +
+      "</div>";
+    if (gq) return h + gsearchHTML(gq);
 
     /* 立即刷题 / 接着上次停的地方 */
     var lp = A.lastPos();
@@ -2193,7 +2272,7 @@ if (ST.cardOpen) {
   /* ---------- 搜索框防抖 ---------- */
   var searchTimer = null;
   function hookSearch() {
-    [["#kpsearch", "nq", "kplist"], ["#lssearch", "lq", "lslist"], ["#fsearch", "fq", "flist"], ["#wsearch", "wq", "wlist"]].forEach(function (p) {
+    [["#gsearch", "gq", "today"], ["#kpsearch", "nq", "kplist"], ["#lssearch", "lq", "lslist"], ["#fsearch", "fq", "flist"], ["#wsearch", "wq", "wlist"]].forEach(function (p) {
       var el = $(p[0]);
       if (!el) return;
       el.addEventListener("input", function () {
@@ -2322,6 +2401,40 @@ if (ST.cardOpen) {
     });
     return first;
   }
+
+  /* 全站搜索结果跳转 */
+  on("gs-q", function (el) {
+    var id = el.getAttribute("data-v");
+    if (!A.QMAP[id]) return A.toast("这道题不在题库里了", "warn");
+    ST.gq = ""; ST.pin = id; ST.tab = "drill"; A.buildList();
+    SUB.lesson = null; SUB.formula = 0; SUB.examone = -1; SUB.paper = null;
+    render();
+  });
+  on("gs-exam", function (el) {
+    ST.gq = "";
+    SUB.examone = parseInt(el.getAttribute("data-v"), 10);
+    SUB.examschool = el.getAttribute("data-s") || "shu";
+    ST.examSchool = SUB.examschool;
+    SUB.lesson = null; SUB.formula = 0; SUB.paper = null;
+    render();
+    window.scrollTo(0, 0);
+  });
+  on("gs-kp", function (el) {
+    ST.gq = "";
+    ST.flt.mode = "kp"; ST.flt.kp = el.getAttribute("data-v"); ST.flt.subject = "";
+    ST.pin = null; ST.qi = 0;
+    go("drill");
+  });
+  on("gs-lesson", function (el) {
+    var id = el.getAttribute("data-v"), q = el.getAttribute("data-q") || "";
+    ST.gq = "";
+    SUB.lesson = id;
+    A.markRead(id);
+    render();
+    var m = findHighlight(q);
+    if (m) m.scrollIntoView({ block: "center" });
+    else window.scrollTo(0, 0);
+  });
 
   on("lesson", function (el) {
     var id = el.getAttribute("data-v");
