@@ -712,6 +712,23 @@
   A.dailyExam = dailyExam;
 
   A.record = record; A.recordExam = recordExam; A.examDone = examDone; A.examIsDue = examIsDue; A.examDueList = examDueList; A.noteGet = noteGet; A.noteSet = noteSet; A.noteCount = noteCount;
+
+  /* 错因标签：同一个错题只挂一个标签，再点一次取消 */
+  function setWhy(qid, why) {
+    var w = DB.wrong && DB.wrong[qid];
+    if (!w) return;
+    if (w.why === why) delete w.why; else w.why = why;
+    save();
+  }
+  function whyStats() {
+    var c = {}, k, w;
+    for (k in (DB.wrong || {})) {
+      w = DB.wrong[k];
+      if (w && w.why) c[w.why] = (c[w.why] || 0) + 1;
+    }
+    return c;
+  }
+  A.setWhy = setWhy; A.whyStats = whyStats;
   A.markRead = markRead; A.isRead = isRead; A.readCount = readCount; A.posGet = posGet; A.posSet = posSet; A.master = master; A.unmaster = unmaster; A.toggleStar = toggleStar;
   A.dueList = dueList; A.dueCount = function () { return dueList().length; };
   A.todayQueue = todayQueue; A.todayLog = todayLog; A.streak = streak;
@@ -1476,6 +1493,18 @@ if (ST.cardOpen) {
       h += '<div class="tiny muted">正确率低于 70% 且练过 3 次以上的考点，按最差排的。</div></div>';
     }
 
+    /* 错因集中提示：同一类错反复出现，说明方法不对，不是练得少 */
+    (function () {
+      var wc = A.whyStats(), top = "", tn = 0, total = Object.keys(A.DB.wrong || {}).length, k;
+      for (k in wc) if (wc[k] > tn) { tn = wc[k]; top = k; }
+      if (!top || total < 5 || tn / total < 0.4) return;
+      var NAME = { "概念": "概念不清", "计算": "算错", "图示": "看图错", "思路": "没思路" };
+      h += '<div class="card whyhint">' +
+        '<div class="tiny">错题里 <b>' + Math.round(tn / total * 100) + "%</b> 是「" + esc(NAME[top] || top) +
+        "」这一类。这类错光刷新题压不住，先去讲义把那一讲讲透，再回来重测。</div>" +
+        '<div class="row"><button class="btn ghost sm" data-act="start-wrong">去重测</button></div></div>';
+    })();
+
     /* 每日一题：给一道真题，原卷页图直接摆在卡上（题目、电路图都在卷面里） */
     var dq = A.dailyExam();
     if (dq) {
@@ -1725,6 +1754,28 @@ if (ST.cardOpen) {
       });
     h += "</div>";
 
+    /* 按科目分 + 按错因分：看出「为什么错」比看出「错了哪些」更有用 */
+    var wsubj = A.ST.wsubj || "";
+    var whyCount = A.whyStats();
+    var WHY = [["概念", "概念不清"], ["计算", "算错"], ["图示", "看图错"], ["思路", "没思路"]];
+    var nWhy = 0;
+    WHY.forEach(function (x) { nWhy += whyCount[x[0]] || 0; });
+    if (nWhy) {
+      h += '<div class="chips whychips">';
+      h += '<button class="chip' + (!A.ST.wwhy ? " on" : "") + '" data-act="wwhy" data-v="">错因不限</button>';
+      WHY.forEach(function (x) {
+        if (!whyCount[x[0]]) return;
+        h += '<button class="chip' + (A.ST.wwhy === x[0] ? " on" : "") + '" data-act="wwhy" data-v="' + x[0] + '">' +
+          x[1] + " " + whyCount[x[0]] + "</button>";
+      });
+      h += "</div>";
+    }
+    h += '<div class="chips">';
+    [["", "全部科目"], ["电路", "电路"], ["信号", "信号"]].forEach(function (p) {
+      h += '<button class="chip' + (wsubj === p[0] ? " on" : "") + '" data-act="wsubj" data-v="' + p[0] + '">' + p[1] + "</button>";
+    });
+    h += "</div>";
+
     var list;
     if (tab === "star") list = star.map(function (id) { return { id: id, w: { kind: "star", n: "" } }; });
     else if (tab === "no") list = no.map(function (id) { return { id: id, w: A.DB.wrong[id] }; });
@@ -1732,9 +1783,14 @@ if (ST.cardOpen) {
     else list = ids.map(function (id) { return { id: id, w: A.DB.wrong[id] }; });
 
     list = list.filter(function (x) { return !!A.QMAP[x.id]; });
+    if (wsubj) list = list.filter(function (x) { return A.QMAP[x.id].subject === wsubj; });
+    if (A.ST.wwhy) list = list.filter(function (x) { return x.w && x.w.why === A.ST.wwhy; });
     list.sort(function (a, b) { return String(b.w.at || "").localeCompare(String(a.w.at || "")); });
 
-    if (!list.length) return h + '<div class="empty">这里还是空的。<br><span class="tiny">做题时点「不熟悉」或「不会」就会收进来。</span></div>';
+    if (!list.length) {
+      if (ids.length || star.length) return h + '<div class="empty">这个筛选下没有题。<br><span class="tiny">换个错因或科目看看。</span></div>';
+      return h + '<div class="empty">这里还是空的。<br><span class="tiny">做题时点「不熟悉」或「不会」就会收进来。</span></div>';
+    }
 
     h += '<div class="card">';
     list.forEach(function (x) {
@@ -1747,6 +1803,14 @@ if (ST.cardOpen) {
         (x.w.n ? '<span class="tiny muted">错 ' + x.w.n + " 次</span>" : "") +
         '<span class="tiny muted">' + (r.due ? "下次 " + r.due : "") + "</span></div>";
       h += '<div class="wstem" data-act="open-q" data-q="' + esc(x.id) + '">' + esc(A.lead(q.stem, 90)) + "</div>";
+      if (x.w.kind !== "star") {
+        h += '<div class="whyrow">';
+        [["概念", "概念不清"], ["计算", "算错了"], ["图示", "看图错"], ["思路", "没思路"]].forEach(function (y) {
+          h += '<button class="whychip' + (x.w.why === y[0] ? " on" : "") + '" data-act="why" data-q="' + esc(x.id) +
+            '" data-v="' + y[0] + '">' + y[1] + "</button>";
+        });
+        h += "</div>";
+      }
       h += '<div class="row">' +
         '<button class="btn sm" data-act="open-q" data-q="' + esc(x.id) + '">重做</button>' +
         '<button class="btn ghost sm" data-act="master" data-v="' + esc(x.id) + '">已经会了</button>' +
@@ -2098,6 +2162,12 @@ if (ST.cardOpen) {
   on("kwclear", function () {
     ST.flt.kw = ""; ST.qi = 0; A.buildList(); render();
   });
+  on("why", function (el) {
+    A.setWhy(el.getAttribute("data-q"), el.getAttribute("data-v"));
+    render();
+  });
+  on("wwhy", function (el) { ST.wwhy = el.getAttribute("data-v") || ""; render(); });
+  on("wsubj", function (el) { ST.wsubj = el.getAttribute("data-v") || ""; render(); });
   on("start-wrong", function () { ST.flt.mode = "wrong"; go("drill"); });
   on("open-q", function (el) {
     var id = el.getAttribute("data-q");
