@@ -321,6 +321,8 @@
 
   /* ---------- 导入导出 ---------- */
   function exportDB() {
+    DB.backupAt = Date.now();
+    save();
     var payload = { app: "kaoyan829", v: 2, at: new Date().toISOString(), db: DB };
     var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     var a = document.createElement("a");
@@ -340,6 +342,7 @@
       /* 导入前确认：优先用站内确认框 */
       function doImport() {
         DB = A.DB = migrate(d);
+        DB.backupAt = Date.now();
         saveNow(); toast("导入成功", "ok");
         A.render();
       }
@@ -382,6 +385,15 @@
     saveNow(); toast("记录已清空", "ok"); A.render();
   }
   A.exportDB = exportDB; A.importDB = importDB; A.exportCSV = exportCSV; A.wipeDB = wipeDB;
+  A.backupInfo = function () {
+    var at = DB.backupAt || 0;
+    if (!at) return { at: 0, days: -1, text: "还没导出过备份", warn: true };
+    var days = Math.floor((Date.now() - at) / 86400000);
+    return {
+      at: at, days: days, warn: days >= 7,
+      text: days <= 0 ? "今天已经备份过" : ("上次备份：" + days + " 天前")
+    };
+  };
 
   /* ---------- 数据索引 ---------- */
   /* 题库分两个数组：QUESTIONS（电路）与 QSIGNAL（信号），这里合并成一个池 */
@@ -1514,9 +1526,11 @@ if (ST.cardOpen) {
     }
 
     /* 备份提醒：数据只在浏览器里 */
-    h += '<div class="card tipcard">';
+    var bk = A.backupInfo();
+    h += '<div class="card tipcard' + (bk.warn ? " warn" : "") + '">';
     h += '<div class="h4">数据只存在这台设备</div>';
-    h += '<div class="tiny muted">清缓存 / 换设备就没了。建议每周导出一次备份。</div>';
+    h += '<div class="tiny ' + (bk.warn ? "" : "muted") + '">' + esc(bk.text) +
+      (bk.warn ? "。清缓存 / 换设备就没了，先导一份。" : "。清缓存 / 换设备就没了。") + "</div>";
     h += '<div class="row"><button class="btn ghost sm" data-act="export">导出备份</button>' +
       '<button class="btn ghost sm" data-act="import">导入备份</button></div>';
     h += "</div>";
@@ -1862,7 +1876,8 @@ if (ST.cardOpen) {
       "</div>";
 
     h += '<div class="card"><div class="h4">数据</div>' +
-      '<div class="tiny muted">记录只存在这台设备的浏览器里。换设备或清缓存前先导出。</div>' +
+      '<div class="tiny ' + (A.backupInfo().warn ? "" : "muted") + '">' + esc(A.backupInfo().text) +
+      '。记录只存在这台设备的浏览器里，换设备或清缓存前先导出。</div>' +
       '<div class="row"><button class="btn sm" data-act="export">导出备份</button>' +
       '<button class="btn ghost sm" data-act="import">导入备份</button>' +
       '<button class="btn ghost sm" data-act="export-csv">导出错题 CSV</button></div>' +
