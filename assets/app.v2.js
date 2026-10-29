@@ -416,14 +416,15 @@
   var GUET = window.EXAMS_GUET || { problems: [] };
   var GUETPROB = (GUET.problems || []).slice();
   GUETPROB.forEach(function (p, i) {
-    p._i = i; p._school = "guet";
+    p._i = i; p._school = "guet"; p._imgdir = "gt";
     p.id = p.id || ("G" + (p.year || "") + "-" + (p.no || i));
   });
-  EPROB.forEach(function (p) { p._school = "shu"; });
+  EPROB.forEach(function (p) { p._school = "shu"; p._imgdir = "zt"; });
 
   var SCHOOLS = [
-    { id: "shu", name: "上海大学 829", short: "上大 829", list: EPROB, ready: EPROB.length > 0 },
-    { id: "guet", name: "桂林电子科技大学 806", short: "桂电 806", list: GUETPROB, ready: GUETPROB.length > 0 }
+    { id: "shu", name: "上海大学 829", short: "上大 829", imgdir: "zt", list: EPROB, ready: EPROB.length > 0 },
+    { id: "guet", name: "桂林电子科技大学 806", short: "桂电 806", imgdir: "gt", list: GUETPROB,
+      ready: GUETPROB.length > 0, papers: GUET.papers || null }
   ];
   function schoolOf(id) {
     for (var i = 0; i < SCHOOLS.length; i++) if (SCHOOLS[i].id === id) return SCHOOLS[i];
@@ -721,6 +722,9 @@
   /* 某一年的整套卷子涉及哪些扫描页（升序，去重） */
   A.paperPages = function (schoolId, year) {
     var sch = schoolOf(schoolId || "shu"), set = {};
+    if (sch.papers && sch.papers[year] && sch.papers[year].length) {
+      return sch.papers[year].slice().sort(function (a, b) { return a - b; });
+    }
     (sch.list || []).forEach(function (p) {
       if (Number(p.year) !== Number(year)) return;
       if (p.page) set[p.page] = 1;
@@ -935,11 +939,21 @@
   A.diffName = diffName;
 
   /* ---------- 图片（真题原卷 / 题图） ---------- */
+  function imgSrc(f) {
+    if (!f) return "";
+    if (/^https?:/.test(f) || /^assets\//.test(f)) return f;
+    return "assets/zt/" + f;
+  }
+  A.imgSrc = imgSrc;
+  function pageImg(dir, n) {
+    return "assets/" + (dir || "zt") + "/p" + String(n).padStart(3, "0") + ".jpg";
+  }
+  A.pageImg = pageImg;
   function figHTML(list, alt) {
     if (!list || !list.length) return "";
     var h = '<div class="figs">';
     list.forEach(function (f) {
-      var src = /^https?:/.test(f) ? f : ("assets/zt/" + f);
+      var src = imgSrc(f);
       h += '<button class="fig" data-act="zoom" data-src="' + esc(src) + '" data-alt="' + esc(alt || "") + '">' +
         '<img src="' + esc(src) + '" alt="' + esc(alt || "题图") + '" loading="lazy" decoding="async">' +
         '<span class="fig-tip">点击放大</span></button>';
@@ -951,8 +965,10 @@
     /* 一道真题可能跨页：page 之后就近取，最多 2 页 */
     if (!p) return [];
     var a = [];
-    if (p.page) a.push("p" + String(p.page).padStart(3, "0") + ".jpg");
-    if (p.page2) a.push("p" + String(p.page2).padStart(3, "0") + ".jpg");
+    var dir = (p && p._imgdir) || "zt";
+    if (p.img && p.img.length) return p.img.slice();
+    if (p.page) a.push(pageImg(dir, p.page));
+    if (p.page2) a.push(pageImg(dir, p.page2));
     return a;
   }
   A.pagesOf = pagesOf;
@@ -1362,15 +1378,15 @@ if (ST.cardOpen) {
     var total = pages.length;
     if (!total) return '<div class="card"><p>这一年的原卷页还没接入。</p></div>';
     var i = Math.max(0, Math.min(total - 1, A.num(idx, 0)));
-    var f = "p" + String(pages[i]).padStart(3, "0") + ".jpg";
+    var f = A.pageImg(sch.imgdir, pages[i]);
     var probs = (sch.list || []).filter(function (p) {
       return Number(p.year) === Number(year) && (!ST.examYear || Number(p.year) === Number(ST.examYear));
     });
     var h = '<div class="paperhead"><button class="btn ghost sm" data-act="paper-close">‹ 真题列表</button>' +
       "<b>" + esc(sch.short) + " · " + esc(String(year)) + " 年整卷</b>" +
       '<span class="tiny muted">第 ' + (i + 1) + " / " + total + " 页</span></div>";
-    h += '<div class="paperwrap"><img src="assets/zt/' + esc(f) + '" alt="' + esc(String(year)) + " 年第 " + (i + 1) + ' 页" ' +
-      'data-act="zoom" data-src="assets/zt/' + esc(f) + '" data-alt="原卷"></div>';
+    h += '<div class="paperwrap"><img src="' + esc(f) + '" alt="' + esc(String(year)) + " 年第 " + (i + 1) + ' 页" ' +
+      'data-act="zoom" data-src="' + esc(f) + '" data-alt="原卷"></div>';
     h += '<div class="ptimerbar" id="ptimerbar">' +
       '<span class="ptimer" id="ptimer">--:--</span>' +
       '<button class="btn ghost sm" data-act="ptimer">开始计时（3 小时）</button>' +
@@ -1517,6 +1533,9 @@ if (ST.cardOpen) {
         return '<button class="fblink" data-act="gotolesson" data-v="' + esc(lid) + '">看考点讲义 ›</button>';
       })() + "</div>";
     h += figHTML(pagesOf(p), p.year + " 年原卷");
+    if (p.ans) h += '<details class="ansbox"><summary>看参考答案（原卷第 ' + p.ans + " 页起）</summary>" +
+      figHTML([A.pageImg("gt", p.ans)], p.year + " 年参考答案") +
+      '<div class="tiny muted">参考答案在原卷后面的解析部分，页内可放大细看。</div></details>';
     h += '<div class="tiny muted">上面是当年原卷扫描页（题干、电路图、数据都在里面）。做完自己判：</div>';
     (function () {
       var r = A.DB.exam && A.DB.exam[p.id];
