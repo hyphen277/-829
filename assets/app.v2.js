@@ -54,6 +54,29 @@
   };
   var num = function (v, dft) { var n = parseFloat(v); return isNaN(n) ? dft : n; };
 
+  /* ---------- 配置：考试日期、每日目标 ---------- */
+  var CFG_DEF = { examDate: "2026-12-19", goal: 30 };
+  function cfg() {
+    var c = (DB && DB.cfg) || {};
+    return {
+      examDate: c.examDate || CFG_DEF.examDate,
+      goal: num(c.goal, CFG_DEF.goal)
+    };
+  }
+  function setCfg(k, v) {
+    DB.cfg = DB.cfg || {};
+    if (k === "goal") { v = num(v, 0); if (!(v > 0)) return; }
+    if (k === "examDate") {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) return;
+    }
+    DB.cfg[k] = v;
+    save();
+  }
+  function daysLeft() {
+    var c = cfg();
+    return dayDiff(todayStr(), c.examDate);
+  }
+
   function tex(s, display) {
     if (window.katex) {
       try {
@@ -160,7 +183,7 @@
   }
 
   A.$ = $; A.$$ = $$; A.esc = esc; A.plain = plain; A.lead = lead;
-  A.todayStr = todayStr; A.dayDiff = dayDiff; A.addDays = addDays; A.num = num;
+  A.todayStr = todayStr; A.dayDiff = dayDiff; A.cfg = cfg; A.setCfg = setCfg; A.daysLeft = daysLeft; A.addDays = addDays; A.num = num;
   A.tex = tex; A.md = md;
   window.MD = md; window.TEX = tex;
 
@@ -170,19 +193,23 @@
 
   function blank() {
     return {
-      v: 2, q: {}, log: {}, wrong: {}, star: {}, mock: {},
+      v: 3, q: {}, log: {}, wrong: {}, star: {}, mock: {}, exam: {}, note: {}, read: {}, pos: {}, fs: 0,
       first: todayStr(), tipSeen: 0, sum: {}
     };
   }
   function migrate(o) {
     o = o || {};
     var b = blank();
-    o.v = 2;
+    o.v = 3;
     o.q = o.q || {};
     o.log = o.log || {};
     o.wrong = o.wrong || {};
     o.star = o.star || {};
     o.mock = o.mock || {};
+    o.exam = o.exam || {};
+    o.note = o.note || {};
+    o.read = o.read || {};
+    o.pos = o.pos || {};
     o.first = o.first || b.first;
     o.tipSeen = o.tipSeen || 0;
     /* v1 的 wrong 只有 {at,n}，没有分类：一律记成「不会」 */
@@ -361,6 +388,24 @@
   var EPROB = (EXAMS.problems || []).slice();
   EPROB.forEach(function (p, i) { p._i = i; p.id = p.id || ("Y" + p.year + "-" + p.no); });
 
+  /* ---------- 院校层：真题按学校分开存 ---------- */
+  var GUET = window.EXAMS_GUET || { problems: [] };
+  var GUETPROB = (GUET.problems || []).slice();
+  GUETPROB.forEach(function (p, i) {
+    p._i = i; p._school = "guet";
+    p.id = p.id || ("G" + (p.year || "") + "-" + (p.no || i));
+  });
+  EPROB.forEach(function (p) { p._school = "shu"; });
+
+  var SCHOOLS = [
+    { id: "shu", name: "上海大学 829", short: "上大 829", list: EPROB, ready: EPROB.length > 0 },
+    { id: "guet", name: "桂林电子科技大学 806", short: "桂电 806", list: GUETPROB, ready: GUETPROB.length > 0 }
+  ];
+  function schoolOf(id) {
+    for (var i = 0; i < SCHOOLS.length; i++) if (SCHOOLS[i].id === id) return SCHOOLS[i];
+    return SCHOOLS[0];
+  }
+
   var SUBJ = [
     { id: "电路", kp: window.KP_CIRCUIT },
     { id: "信号", kp: window.KP_SIGNAL }
@@ -382,6 +427,7 @@
   LESSONS.forEach(function (l) { LESSON_MAP[l.id] = l; });
 
   A.QS = QS; A.QMAP = QMAP; A.EXAMS = EXAMS; A.EPROB = EPROB;
+  A.SCHOOLS = SCHOOLS; A.schoolOf = schoolOf; A.GUETPROB = GUETPROB;
   A.SUBJ = SUBJ; A.KPMAP = KPMAP; A.KPLIST = KPLIST; A.LESSONS = LESSONS; A.LESSON_MAP = LESSON_MAP;
 
   /* 考频：这套卷子里该考点出现过几次（近 10 年单列） */
@@ -439,6 +485,51 @@
     DB.log[d] = L;
     save();
   }
+  /* 真题自评：真题没有题库条目，单独记在 DB.exam，不参与重测队列 */
+  function recordExam(qid, g) {
+    if (!qid) return;
+    var r = DB.exam[qid] || { n: 0, ok: 0 };
+    r.n++;
+    if (g === "ok") r.ok++;
+    r.g = g;
+    r.at = todayStr();
+    DB.exam[qid] = r;
+
+    var d = todayStr();
+    var L = DB.log[d] || { n: 0, ok: 0, fuzzy: 0, no: 0 };
+    L.n++;
+    if (g === "ok") L.ok++;
+    else if (g === "fuzzy") L.fuzzy = (L.fuzzy || 0) + 1;
+    else L.no = (L.no || 0) + 1;
+    DB.log[d] = L;
+    save();
+    return r;
+  }
+  function examDone(qid) { return !!(DB.exam && DB.exam[qid]); }
+
+  /* 每题个人笔记 */
+  function noteGet(qid) { return (DB.note && DB.note[qid]) || ""; }
+  function noteSet(qid, txt) {
+    if (!qid) return;
+    DB.note = DB.note || {};
+    txt = String(txt == null ? "" : txt);
+    if (txt.trim()) DB.note[qid] = txt; else delete DB.note[qid];
+    save();
+  }
+  function noteCount() { return DB.note ? Object.keys(DB.note).length : 0; }
+
+  /* 讲义阅读进度 */
+  function markRead(id) { if (!id) return; DB.read = DB.read || {}; if (!DB.read[id]) { DB.read[id] = 1; save(); } }
+  function isRead(id) { return !!(DB.read && DB.read[id]); }
+  function readCount() { return DB.read ? Object.keys(DB.read).length : 0; }
+  function posGet(id) { return (DB.pos && DB.pos[id]) || 0; }
+  function posSet(id, y) {
+    if (!id) return;
+    DB.pos = DB.pos || {};
+    if (y > 40) DB.pos[id] = Math.round(y); else delete DB.pos[id];
+    save();
+  }
+
   /* 标记「已经会了」：移出复习周期，但保留历史 */
   function master(qid) {
     var r = DB.q[qid] || { n: 0, ok: 0, lvl: 0 };
@@ -534,7 +625,8 @@
   }
   A.dailyExam = dailyExam;
 
-  A.record = record; A.master = master; A.unmaster = unmaster; A.toggleStar = toggleStar;
+  A.record = record; A.recordExam = recordExam; A.examDone = examDone; A.noteGet = noteGet; A.noteSet = noteSet; A.noteCount = noteCount;
+  A.markRead = markRead; A.isRead = isRead; A.readCount = readCount; A.posGet = posGet; A.posSet = posSet; A.master = master; A.unmaster = unmaster; A.toggleStar = toggleStar;
   A.dueList = dueList; A.dueCount = function () { return dueList().length; };
   A.todayQueue = todayQueue; A.todayLog = todayLog; A.streak = streak;
   A.progress = progress; A.totalN = totalN; A.dailyQ = dailyQ;
@@ -572,6 +664,7 @@
     qi: 0, list: [], pin: null,
     answered: {},          /* 本轮已看答案的题 id（避免刷新后重复判分） */
     noteTab: "kp", lq: "", nq: "",
+    examSchool: "shu",
     examYear: 0, examType: "", examDiff: "", examPart: "", examHot: 0,
     aiq: null,             /* 当前问 AI 的题 */
     zoom: null,            /* 放大查看的图片 */
@@ -758,6 +851,12 @@
     h += '<div class="qbody" id="qbody"></div>';
     h += '<div id="qafter"></div>';
 
+    var nt = A.noteGet(q.id);
+    h += '<details class="notebox"' + (nt ? " open" : "") + "><summary>📝 我的笔记" +
+      '<span class="tiny muted">　' + (nt ? nt.length + " 字 · 自动保存" : "点开写，自动保存") + "</span></summary>" +
+      '<textarea id="nq" data-q="' + esc(q.id) + '" placeholder="记这题的坑：漏了哪个条件、公式怎么来的、下次从哪下手…">' +
+      esc(nt) + "</textarea></details>";
+
     if (!ST.pin && total > 1) {
       h += '<div class="qfoot">' +
         '<button class="btn ghost" data-act="prev">‹ 上一题</button>' +
@@ -897,9 +996,28 @@
     h += '<div class="progress"><i style="width:' + Math.round((ST.qi + 1) / n * 100) + '%"></i></div>';
     h += '<div class="tiny qbar">第 <input id="jump" class="jump" type="number" min="1" max="' + n + '" value="' +
       (ST.qi + 1) + '"> / ' + n + ' 题　<span class="kbdhint">' +
-      (q.type === "choice" ? "1-4 选答案 · 1/2/3 判分" : "空格看答案 · 1/2/3 判分") + "</span></div>";
+      (q.type === "choice" ? "1-4 选答案" : "空格看答案") + "</span>" +
+      '<button class="cardbtn' + (ST.cardOpen ? " on" : "") + '" data-act="card">▤ 答题卡</button></div>';
+if (ST.cardOpen) {
+      var cOk = 0, cFu = 0, cNo = 0, cNew = 0, grid = "";
+      ST.list.forEach(function (qq, i) {
+        var r = A.DB.q[qq.id], cls = "ci";
+        if (r && r.n) {
+          if (r.g === "ok") { cls += " cok"; cOk++; }
+          else if (r.g === "fuzzy") { cls += " cfu"; cFu++; }
+          else { cls += " cno"; cNo++; }
+        } else cNew++;
+        if (A.DB.wrong[qq.id]) cls += " cw";
+        if (i === ST.qi) cls += " cur";
+        grid += '<button class="' + cls + '" data-act="goto" data-v="' + i + '">' + (i + 1) + "</button>";
+      });
+      h += '<div class="card cardpanel"><div class="h4">答题卡' +
+        '<span class="tiny muted">　对 ' + cOk + " · 不熟 " + cFu + " · 不会 " + cNo + " · 未做 " + cNew + "</span></div>" +
+        '<div class="cardgrid">' + grid + "</div></div>";
+    }
 
     h += questionCard(q, ST.qi, n);
+
     if (ST.pin) h += '<div class="row"><button class="btn ghost block" data-act="unpin">‹ 返回题库</button></div>';
     return h;
   }
@@ -929,6 +1047,12 @@
 
   function examMatch(p) {
     if (ST.examYear && Number(p.year) !== Number(ST.examYear)) return false;
+    if (ST.examQ) {
+      var q = String(ST.examQ).toLowerCase();
+      var hay = (p.brief || "") + " " + (p.year || "") + " " + (p.no || "") + " " + (p.part || "") + " " + (p.type || "");
+      (p.kp || []).forEach(function (k) { hay += " " + ((A.KPMAP[k] || {}).name || ""); });
+      if (hay.toLowerCase().indexOf(q) < 0) return false;
+    }
     if (ST.examType && (p.type || "") !== ST.examType) return false;
     if (ST.examPart && (p.part || "") !== ST.examPart) return false;
     if (ST.examDiff === "1" && A.num(p.difficulty, 3) > 2) return false;
@@ -942,19 +1066,45 @@
     return true;
   }
 
+  /* 院校选择条：先选学校，再选年份 */
+  function schoolChips() {
+    var cur = ST.examSchool || "shu";
+    var h = '<div class="chips schoolchips">';
+    A.SCHOOLS.forEach(function (s) {
+      h += '<button class="chip schoolchip' + (cur === s.id ? " on" : "") + (s.ready ? "" : " wait") +
+        '" data-f="school" data-v="' + s.id + '">' + esc(s.short) +
+        (s.ready ? "" : '<i class="wtag2">待接入</i>') + "</button>";
+    });
+    h += "</div>";
+    return h;
+  }
+
   function vExam() {
     var h = "";
-    var all = A.EPROB;
+    var sch = A.schoolOf(ST.examSchool || "shu");
+    var all = sch.list;
+
+    h += '<div class="card examhead">';
+    h += schoolChips();
+
+    if (!sch.ready) {
+      h += '<div class="muted tiny" style="margin-top:10px">' + esc(sch.name) +
+        " 的卷子还没接入。拿到可打开的 PDF 后，按年份切好页图放到 assets 里，这里就会出现年份条和题目列表。</div>";
+      h += "</div>";
+      return h;
+    }
+
     var years = {};
     all.forEach(function (p) { (years[p.year] = years[p.year] || []).push(p); });
     var ys = Object.keys(years).map(Number).sort(function (a, b) { return b - a; });
 
     var nShown = all.filter(examMatch).length;
-    h += '<div class="card examhead">';
-    h += '<h3>' + all.length + " 道真题 · " + ys.length + " 个年份</h3>";
+    var doneAll = all.filter(function (p) { return A.examDone(p.id); }).length;
+    h += '<h3>' + esc(sch.name) + " · " + all.length + " 道真题 · " + ys.length + " 个年份</h3>";
+    h += '<div class="tiny muted" style="margin:-2px 0 2px">已自评 ' + doneAll + " / " + all.length + " 道</div>";
     h += '<p class="muted tiny">题干按原卷整理成索引；点「原卷」看当年扫描页，题干和电路图都在上面，改动为零。' +
       "做题时用三档自评，判分由你自己来。</p>";
-    /* 年份选择条：27 年全放进来，横滑即可 */
+    /* 年份选择条：全放进来，横滑即可 */
     h += '<div class="yearchips">';
     h += '<button class="chip yearchip' + (!ST.examYear ? " on" : "") + '" data-f="year" data-v="0">全部</button>';
     ys.forEach(function (y) {
@@ -965,6 +1115,9 @@
     h += "</div>";
 
     h += examFilterChips();
+    h += '<div class="searchwrap"><input id="exq" class="searchbox" type="search" placeholder="搜关键词，如 戴维南 / 三相 / 触发器" value="' +
+      esc(ST.examQ || "") + '">' +
+      (ST.examQ ? '<button class="clr" data-act="examq-clear">✕</button>' : "") + "</div>";
     h += '<div class="tiny muted" style="margin:2px 2px 10px">共 ' + nShown + " 道符合当前筛选</div>";
 
     ys.forEach(function (y) {
@@ -977,9 +1130,9 @@
         (pts ? " · " + pts + " 分" : "") + "</span></div>";
       h += '<div class="exlist">';
       list.forEach(function (p) {
-        var done = A.DB.q[p.id];
+        var done = A.DB.exam[p.id];
         var hot = (p.kp || []).some(function (k) { return (A.FREQ10[k] || 0) >= 3; });
-        h += '<div class="exrow' + (done ? " done" : "") + '" data-act="open-exam" data-v="' + p._i + '">';
+        h += '<div class="exrow' + (done ? " done" : "") + '" data-act="open-exam" data-s="' + esc(p._school || "shu") + '" data-v="' + p._i + '">';
         h += '<div class="exno">' + esc(p.no || "") + "</div>";
         h += '<div class="exmain"><div class="exbrief">' + esc(p.brief || "") + "</div>" +
           '<div class="exmeta"><span class="tag">' + esc(p.part || "") + "</span>" +
@@ -989,7 +1142,7 @@
           (hot ? '<span class="tag hot">高频</span>' : "") +
           (done ? '<span class="tag ok">做过</span>' : "") +
           "</div></div>";
-        h += '<div class="exacts"><button class="link" data-act="open-exam" data-v="' + p._i + '">原卷 ›</button></div>';
+        h += '<div class="exacts"><button class="link" data-act="open-exam" data-s="' + esc(p._school || "shu") + '" data-v="' + p._i + '">原卷 ›</button></div>';
         h += "</div>";
       });
       h += "</div></div>";
@@ -1002,11 +1155,13 @@
 
   /* 单道真题：摘要 + 原卷页 + 三档自评 */
   function vExamOne(i) {
-    var p = A.EPROB[i];
+    var p = A.schoolOf(ST.examSchool || "shu").list[i];
     if (!p) return '<div class="empty">没找到这道题</div>';
+    var sch = A.schoolOf(p._school || ST.examSchool || "shu");
+    var lst = A.schoolOf(ST.examSchool || "shu").list;
     var h = '<div class="row" style="margin-bottom:10px"><button class="btn ghost" data-act="exam-back">‹ 真题列表</button></div>';
     h += '<div class="card">';
-    h += '<div class="qtop"><span class="tag y">' + p.year + " 年 " + esc(p.no || "") + "</span>" +
+    h += '<div class="qtop"><span class="tag y">' + esc(sch.short) + " · " + esc(String(p.year)) + " 年 " + esc(p.no || "") + "</span>" +
       '<span class="tag ' + (p.part === "信号" ? "sig" : "cir") + '">' + esc(p.part || "") + "</span>" +
       (p.type ? '<span class="tag t">' + esc(p.type) + "</span>" : "") +
       (p.points ? '<span class="tag">' + p.points + " 分</span>" : "") +
@@ -1021,6 +1176,10 @@
         '<span class="gs">' + x.s + '</span><span class="gt">' + x.t + "</span></button>";
     });
     h += "</div>";
+    h += '<div class="row" style="margin-top:12px;gap:8px">' +
+      (i > 0 ? '<button class="btn ghost sm" data-act="open-exam" data-v="' + (i - 1) + '">‹ 上一题</button>' : "") +
+      (i < lst.length - 1 ? '<button class="btn ghost sm" data-act="open-exam" data-v="' + (i + 1) + '">下一题 ›</button>' : "") +
+      '<span class="tiny muted" style="margin-left:auto">' + (i + 1) + " / " + lst.length + "</span></div>";
     h += "</div>";
     return h;
   }
@@ -1079,6 +1238,34 @@
     }
     h += "</div>";
 
+    /* 倒计时 + 今日目标 */
+    var c = A.cfg(), dl = A.daysLeft(), goal = c.goal || 30;
+    var gpct = Math.min(100, Math.round((L.n || 0) / goal * 100));
+    h += '<div class="card goalcard">';
+    h += '<div class="goalrow"><span class="goalnum">' + (dl > 0 ? dl : 0) + '</span>' +
+      '<span class="goaltxt">' + (dl > 0 ? "天后上考场" : dl === 0 ? "今天上考场" : "考试已结束") +
+      '<br><i class="tiny muted">' + esc(c.examDate) + "</i></span>" +
+      '<span class="goalrate">' + (L.n || 0) + " / " + goal + "</span></div>";
+    h += '<div class="pbar thin" style="margin-top:8px"><i style="width:' + gpct + '%"></i><span>今日目标 ' + gpct + "%</span></div>";
+    h += "</div>";
+
+    /* 加到桌面（PWA）引导：独立窗口里就不显示了 */
+    var standalone = false;
+    try {
+      standalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+        window.navigator.standalone === true;
+    } catch (e2) { }
+    if (!standalone && !(A.DB.cfg && A.DB.cfg.hidePwa)) {
+      var ios = /iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+      h += '<div class="card pwatip">' +
+        '<div class="h4">装到桌面，断网也能做题</div>' +
+        '<div class="tiny muted">' + (ios
+          ? "iPhone：点底部「分享」→「添加到主屏幕」。之后从图标直接打开，像 App 一样全屏。"
+          : "安卓 Chrome：右上角「⋮」→「添加到主屏幕」／「安装应用」。之后从图标直接打开，断网也能用。") + "</div>" +
+        '<div class="row"><button class="btn ghost sm" data-act="pwa-hide">知道了</button></div>' +
+        "</div>";
+    }
+
     /* 待复习优先条：符合艾宾浩斯，先把到期的清掉 */
     if (due > 0) {
       h += '<div class="card duecard">';
@@ -1107,7 +1294,7 @@
         h += '<div class="dthumb">' + A.figHTML(pg.slice(0, 1), "原卷") + "</div>";
         h += '<div class="tiny muted">点缩略图放大；题干和电路图都在原卷扫描页上。</div>';
       }
-      h += '<div class="row"><button class="btn primary" data-act="open-exam" data-v="' + dq._i + '">看原卷做题 ›</button></div>';
+      h += '<div class="row"><button class="btn primary" data-act="open-exam" data-s="' + esc(dq._school || "shu") + '" data-v="' + dq._i + '">看原卷做题 ›</button></div>';
       h += "</div>";
     }
 
@@ -1260,12 +1447,14 @@
       (groups[l.subject || "其他"] = groups[l.subject || "其他"] || []).push(l);
     });
     Object.keys(groups).forEach(function (k) {
-      h += '<div class="chhead"><b>' + esc(k) + "</b><span class='tiny muted'>" + groups[k].length + " 讲</span></div>";
+      var rd = groups[k].filter(function (l) { return A.isRead(l.id); }).length;
+      h += '<div class="chhead"><b>' + esc(k) + "</b><span class='tiny muted'>" + groups[k].length +
+        " 讲" + (rd ? " · 已读 " + rd : "") + "</span></div>";
       groups[k].forEach(function (l) {
         var words = l.md ? String(l.md).length : 0;
         var sum = (l.summary || "").trim();
         h += '<div class="lessonrow" data-act="lesson" data-v="' + esc(l.id) + '">' +
-          '<div class="lt">' + esc(l.title) + "</div>" +
+          '<div class="lt">' + esc(l.title) + (A.isRead(l.id) ? '<span class="readmark">✓</span>' : "") + "</div>" +
           '<div class="ls">' + esc(sum || words + " 字") + "</div></div>";
       });
     });
@@ -1376,7 +1565,7 @@
 
   /* ---------- 统计 ---------- */
   function vStats() {
-    var tot = A.totalN(), pr = A.progress(), sk = A.streak();
+    var tot = A.totalN(), pr = A.progress(), sk = A.streak(), c = A.cfg();
     var h = "";
 
     h += '<div class="card">';
@@ -1457,7 +1646,32 @@
     });
     h += "</div>";
 
+    /* 笔记总览 */
+    var nk = Object.keys(A.DB.note || {});
+    h += '<div class="card"><div class="h4">我的笔记 <span class="tiny muted">' + nk.length + " 条</span></div>";
+    if (!nk.length) {
+      h += '<div class="tiny muted">刷题时每道题下面都能写笔记，写完会汇总到这里。</div>';
+    } else {
+      h += "<details" + (nk.length <= 6 ? " open" : "") + "><summary class=\"tiny\">展开笔记列表</summary>";
+      nk.slice().reverse().forEach(function (id) {
+        var q = A.QMAP[id];
+        if (!q) return;
+        h += '<div class="noterow"><div class="nrq">' + esc(A.lead(q.stem, 40)) + "</div>" +
+          '<div class="nrt">' + esc(A.lead(A.noteGet(id), 70)) + "</div>" +
+          '<button class="link" data-act="open-q" data-v="' + esc(id) + '">去做 ›</button></div>';
+      });
+      h += "</details>";
+    }
+    h += "</div>";
+
     /* 数据管理 */
+    h += '<div class="card"><div class="h4">设置</div>' +
+      '<div class="cfgrow"><label for="cfgd">考试日期</label>' +
+      '<input type="date" id="cfgd" value="' + esc(c.examDate) + '"></div>' +
+      '<div class="cfgrow"><label for="cfgg">每日目标</label>' +
+      '<input type="number" id="cfgg" min="5" max="300" step="5" value="' + (c.goal || 30) + '"><span class="tiny muted">题</span></div>' +
+      "</div>";
+
     h += '<div class="card"><div class="h4">数据</div>' +
       '<div class="tiny muted">记录只存在这台设备的浏览器里。换设备或清缓存前先导出。</div>' +
       '<div class="row"><button class="btn sm" data-act="export">导出备份</button>' +
@@ -1479,8 +1693,11 @@
     var prev = k > 0 ? sib[k - 1] : null;
     var next = (k >= 0 && k < sib.length - 1) ? sib[k + 1] : null;
 
-    var h = '<div class="row" style="margin-bottom:10px"><button class="btn ghost" data-act="lesson-back">‹ 返回讲义</button></div>';
-    h += '<article class="lessonpage">' + md(L.md) + "</article>";
+    var h = '<div class="lsbar"><button class="btn ghost sm" data-act="lesson-back">‹ 讲义</button>' +
+      '<span class="fsbtns"><button class="fsb" data-act="fs" data-v="-1">A−</button>' +
+      '<button class="fsb" data-act="fs" data-v="1">A+</button></span>' +
+      (A.isRead(L.id) ? '<span class="tiny muted">✓ 已读</span>' : "") + "</div>";
+    h += '<article class="lessonpage fs' + (A.DB.fs || 0) + '">' + md(L.md) + "</article>";
     h += '<div class="row" style="margin-top:18px">';
     if (prev) h += '<button class="btn ghost" data-act="lesson" data-v="' + esc(prev.id) + '">‹ ' + esc(A.lead(prev.title, 12)) + "</button>";
     if (next) h += '<button class="btn ghost" data-act="lesson" data-v="' + esc(next.id) + '">' + esc(A.lead(next.title, 12)) + " ›</button>";
@@ -1505,7 +1722,12 @@
     { id: "wrong", t: "重测", i: "↺", view: A.vWrong },
     { id: "stats", t: "我的", i: "▦", view: A.vStats }
   ];
-  var SUB = A.SUBVIEW || (A.SUBVIEW = { lesson: null, formula: 0, examone: -1 });
+  var SUB = A.SUBVIEW || (A.SUBVIEW = { lesson: null, formula: 0, examone: -1, examschool: "shu" });
+
+  /* 当前院校的真题数组里取第 i 道 */
+  function examAt(i) {
+    return A.schoolOf(SUB.examschool || ST.examSchool || "shu").list[i];
+  }
 
   function currentView() {
     if (SUB.lesson) return { id: "lesson", html: A.vLesson(SUB.lesson) };
@@ -1652,8 +1874,34 @@
     ST.noteTab = "lesson"; ST.lq = hit[0].title.slice(0, 6);
     SUB.lesson = hit[0].id; render();
   });
-  on("lesson", function (el) { SUB.lesson = el.getAttribute("data-v"); render(); });
-  on("lesson-back", function () { SUB.lesson = null; render(); });
+  on("lesson", function (el) {
+    var id = el.getAttribute("data-v");
+    SUB.lesson = id;
+    A.markRead(id);
+    render();
+    window.scrollTo(0, A.posGet(id));
+  });
+  on("lesson-back", function () { SUB.lesson = null; render(); window.scrollTo(0, 0); });
+
+  /* 讲义字号 */
+  on("fs", function (el) {
+    var d = parseInt(el.getAttribute("data-v"), 10) || 0;
+    var v = (A.DB.fs || 0) + d;
+    if (v < -1) v = -1;
+    if (v > 2) v = 2;
+    A.DB.fs = v; A.save();
+    var y = window.scrollY;
+    render();
+    window.scrollTo(0, y);
+  });
+
+  /* 记住讲义读到哪 */
+  var PT = null;
+  window.addEventListener("scroll", function () {
+    if (ST.tab !== "notes" || !SUB.lesson) return;
+    clearTimeout(PT);
+    PT = setTimeout(function () { A.posSet(SUB.lesson, window.scrollY); }, 400);
+  }, { passive: true });
 
   /* 重测 */
   on("wtab", function (el) { ST.wtab = el.getAttribute("data-v"); render(); });
@@ -1678,7 +1926,24 @@
   /* 刷题 */
   on("prev", function () { if (ST.qi > 0) { ST.qi--; render(); } });
   on("next", function () { if (ST.qi < ST.list.length - 1) { ST.qi++; render(); } });
+
+  /* 答题卡开关 + 跳题 */
+  on("card", function () { ST.cardOpen = !ST.cardOpen; render(); });
+  on("goto", function (el) {
+    var i = parseInt(el.getAttribute("data-v"), 10);
+    if (isNaN(i) || i < 0 || i >= ST.list.length) return;
+    ST.qi = i; ST.cardOpen = false; ST.ans = null; render();
+    window.scrollTo(0, 0);
+  });
   on("unpin", function () { ST.pin = null; A.buildList(); render(); });
+
+  /* 从笔记跳到单题 */
+  on("open-q", function (el) {
+    var id = el.getAttribute("data-v");
+    if (!A.QMAP[id]) { A.toast("这道题不在题库里了", "warn"); return; }
+    ST.pin = id; ST.tab = "drill"; A.buildList(); render();
+  });
+  on("pwa-hide", function () { A.setCfg("hidePwa", true); render(); });
   on("kpsub", function (el) { ST.kpSub = el.getAttribute("data-v"); render(); });
   on("kpreset", function () { ST.kpOpen = true; ST.flt.kp = ""; render(); });
   on("pickkp", function (el) {
@@ -1724,15 +1989,19 @@
     ST.examType = ""; ST.examPart = ""; ST.examDiff = ""; ST.examHot = 0; render();
   });
   on("open-exam", function (el) {
-    SUB.examone = parseInt(el.getAttribute("data-v"), 10); render();
+    SUB.examone = parseInt(el.getAttribute("data-v"), 10);
+    SUB.examschool = el.getAttribute("data-s") || ST.examSchool || "shu";
+    ST.examSchool = SUB.examschool;
+    render();
+    window.scrollTo(0, 0);
   });
   on("exam-back", function () { SUB.examone = -1; render(); });
   on("grade-exam", function (el) {
     var i = parseInt(el.getAttribute("data-v"), 10);
     var g = el.getAttribute("data-g");
-    var p = A.EPROB[i];
+    var p = examAt(i);
     if (!p) return;
-    A.record(p.id, g);
+    A.recordExam(p.id, g);
     var r = (g === "ok" ? "右侧 " : "") + (g === "ok" ? "会" : g === "fuzzy" ? "不熟" : "不会");
     A.toast("已记录：" + r, g === "ok" ? "ok" : "warn");
     $$(".grade3 .gbtn").forEach(function (b) { b.classList.remove("sel"); });
@@ -1790,7 +2059,7 @@
 
   function currentQuestion() {
     if (SUB.examone >= 0) {
-      var p = A.EPROB[SUB.examone];
+      var p = examAt(SUB.examone);
       if (!p) return null;
       return {
         title: p.year + " 年 " + (p.no || "") + "（" + (p.part || "") + " 真题）",
@@ -1820,6 +2089,10 @@
         '<textarea id="aiq" class="aiq" rows="3" placeholder="哪里不懂就问，比如：第二步为什么这么设节点？"></textarea>' +
         '<div class="row"><input id="aikey" class="aikey" type="password" placeholder="DeepSeek API Key（只存在本机）">' +
         '<button class="btn ghost sm" data-act="ai-savekey">保存</button></div>' +
+        '<details class="aiadv"><summary class="tiny">换模型 / 换接口（可选）</summary>' +
+        '<input id="aibase" class="aikey" placeholder="接口地址，默认 https://api.deepseek.com">' +
+        '<input id="aimodel" class="aikey" placeholder="模型，默认 deepseek-chat">' +
+        '<div class="tiny muted">可填任何 OpenAI 兼容接口（如硅基流动、智谱、通义）。</div></details>' +
         '<div class="row"><button class="btn primary block" data-act="ai-send">发送</button></div>' +
         '<div id="aiout" class="aiout"></div>' +
         '<div class="tiny muted">Key 只写进本机 localStorage，不会发给别人。没有 Key 也能做题。</div>' +
@@ -1831,6 +2104,15 @@
     document.body.classList.add("noscroll");
     var k = document.getElementById("aikey");
     if (k) k.value = aiKey();
+    var b = document.getElementById("aibase");
+    if (b) b.value = (localStorage.getItem("kaoyan829.v2.aibase") || "");
+    var m = document.getElementById("aimodel");
+    if (m) m.value = (localStorage.getItem("kaoyan829.v2.aimodel") || "");
+    var out0 = document.getElementById("aiout");
+    var past = cur && A.DB.ai ? A.DB.ai[cur.id] : null;
+    out0.innerHTML = past
+      ? '<div class="tiny muted">上次的回答</div><div class="aitext">' + md(past) + "</div>"
+      : "";
     var t = document.getElementById("aiq");
     if (t) { t.value = ""; setTimeout(function () { t.focus(); }, 120); }
     document.getElementById("aiout").innerHTML = "";
@@ -1857,15 +2139,26 @@
     var out = document.getElementById("aiout");
     out.innerHTML = '<div class="aiwait">思考中…</div>';
 
+    var base = ((document.getElementById("aibase") || {}).value || "").trim() || "https://api.deepseek.com";
+    var model = ((document.getElementById("aimodel") || {}).value || "").trim() || "deepseek-chat";
+    try {
+      localStorage.setItem("kaoyan829.v2.aibase", base);
+      localStorage.setItem("kaoyan829.v2.aimodel", model);
+    } catch (e) {}
+    base = base.replace(/\/+$/, "");
+    if (!/\/chat\/completions$/.test(base)) {
+      if (/\/v\d+$/.test(base)) base += "/chat/completions";
+      else base += "/v1/chat/completions";
+    }
     var sys = "你是考研电路与信号系统的辅导老师。用最直白的中文解释，先讲这一步在干什么，再讲为什么这么做，" +
       "最后提醒易错点。不要长篇大论，控制在 300 字内。公式用 $...$ 包裹。";
     var user = (cur ? "题目：" + cur.body + "\n\n" : "") + "我的问题：" + q;
 
-    fetch("https://api.deepseek.com/chat/completions", {
+    fetch(base, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
       body: JSON.stringify({
-        model: "deepseek-chat",
+        model: model,
         messages: [{ role: "system", content: sys }, { role: "user", content: user }],
         temperature: 0.4, max_tokens: 900, stream: true
       })
@@ -1876,7 +2169,16 @@
       var box = out.querySelector(".aitext");
       function pump() {
         return reader.read().then(function (res) {
-          if (res.done) { A.toast("回答完成", "ok"); return; }
+          if (res.done) {
+            A.toast("回答完成", "ok");
+            var cq = currentQuestion();
+            if (cq && acc) {
+              A.DB.ai = A.DB.ai || {};
+              A.DB.ai[cq.id] = acc;
+              try { A.save(); } catch (e) {}
+            }
+            return;
+          }
           buf += dec.decode(res.value, { stream: true });
           var lines = buf.split("\n"); buf = lines.pop();
           lines.forEach(function (ln) {
@@ -1913,6 +2215,7 @@
       ST[f] = el.getAttribute("data-v");
       if (f === "examHot") ST.examHot = el.getAttribute("data-v") === "1" ? 1 : 0;
       if (f === "year") ST.examYear = parseInt(el.getAttribute("data-v"), 10) || 0;
+      if (f === "school") { ST.examSchool = el.getAttribute("data-v"); ST.examYear = 0; ST.examType = ""; ST.examPart = ""; ST.examDiff = ""; ST.examHot = 0; }
       if (f === "mode") { ST.qi = 0; if (el.getAttribute("data-v") !== "kp") ST.kpOpen = false; }
       if (f === "subject") { ST.flt.subject = el.getAttribute("data-v"); ST.qi = 0; }
       A.buildList(); render();
@@ -1928,6 +2231,44 @@
     if (!b) return;
     e.preventDefault();
     go(b.getAttribute("data-tab"));
+  });
+
+  on("examq-clear", function () { ST.examQ = ""; render(); });
+
+  /* 真题搜索：边打边筛，保住输入框焦点和光标 */
+  var TQ = null;
+  document.addEventListener("input", function (e) {
+    var t = e.target;
+    if (t && t.id === "nq") {
+      var qid = t.getAttribute("data-q");
+      clearTimeout(TQ);
+      TQ = setTimeout(function () { A.noteSet(qid, t.value); }, 500);
+      return;
+    }
+    if (!t || t.id !== "exq") return;
+    ST.examQ = t.value;
+    clearTimeout(TQ);
+    TQ = setTimeout(function () {
+      render();
+      var el = document.getElementById("exq");
+      if (el) { el.focus(); var n = el.value.length; try { el.setSelectionRange(n, n); } catch (x) { } }
+    }, 220);
+  });
+
+  /* ---------- 设置项变更 ---------- */
+  document.addEventListener("focusout", function (e) {
+    var t = e.target;
+    if (t && t.id === "nq") A.noteSet(t.getAttribute("data-q"), t.value);
+  });
+
+  document.addEventListener("change", function (e) {
+    var t = e.target;
+    if (!t || !t.id) return;
+    if (t.id === "cfgd") { A.setCfg("examDate", t.value); A.toast("考试日期： " + t.value, "ok"); render(); }
+    else if (t.id === "cfgg") {
+      var v = parseInt(t.value, 10);
+      if (v >= 5 && v <= 300) { A.setCfg("goal", v); A.toast("每日目标： " + v + " 题", "ok"); render(); }
+    }
   });
 
   /* ---------- 键盘 ---------- */
