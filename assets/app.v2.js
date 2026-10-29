@@ -1785,7 +1785,12 @@ if (ST.cardOpen) {
     list = list.filter(function (x) { return !!A.QMAP[x.id]; });
     if (wsubj) list = list.filter(function (x) { return A.QMAP[x.id].subject === wsubj; });
     if (A.ST.wwhy) list = list.filter(function (x) { return x.w && x.w.why === A.ST.wwhy; });
-    list.sort(function (a, b) { return String(b.w.at || "").localeCompare(String(a.w.at || "")); });
+    list.sort(function (a, b) {
+      var ra = A.DB.q[a.id] || {}, rb = A.DB.q[b.id] || {};
+      var da = ra.due || "9999-99-99", db2 = rb.due || "9999-99-99";
+      if (da !== db2) return da < db2 ? -1 : 1;              /* 先做到期的 */
+      return String(b.w.at || "").localeCompare(String(a.w.at || ""));
+    });
 
     if (!list.length) {
       if (ids.length || star.length) return h + '<div class="empty">这个筛选下没有题。<br><span class="tiny">换个错因或科目看看。</span></div>';
@@ -1801,7 +1806,7 @@ if (ST.cardOpen) {
         (x.w.kind === "fuzzy" ? "不熟" : x.w.kind === "star" ? "收藏" : "不会") + "</span>" +
         '<span class="tag ' + (q.subject === "信号" ? "sig" : "cir") + '">' + esc(q.subject) + "</span>" +
         (x.w.n ? '<span class="tiny muted">错 ' + x.w.n + " 次</span>" : "") +
-        '<span class="tiny muted">' + (r.due ? "下次 " + r.due : "") + "</span></div>";
+        (r.due ? (r.due <= A.todayStr() ? '<span class="tag due">今天该复习</span>' : '<span class="tiny muted">下次 ' + r.due + "</span>") : "") + "</div>";
       h += '<div class="wstem" data-act="open-q" data-q="' + esc(x.id) + '">' + esc(A.lead(q.stem, 90)) + "</div>";
       if (x.w.kind !== "star") {
         h += '<div class="whyrow">';

@@ -205,6 +205,7 @@ main{max-width:760px;margin:0 auto;padding:14px 14px 26px}
 .tag.d{background:none;color:var(--ink3);letter-spacing:1px;padding:0 2px}
 .tag.hot{background:var(--bad-soft);color:var(--hot)}
 .tag.ok{background:var(--ok-soft);color:var(--ok)}
+.tag.due{background:var(--warn-soft);color:var(--warn)}
 .tag.kptag{cursor:pointer;border:0;font-family:inherit}
 .starbtn{margin-left:auto;border:0;background:none;font-size:17px;line-height:1;color:var(--ink3);cursor:pointer;padding:2px 4px}
 .starbtn.on{color:var(--warn)}
