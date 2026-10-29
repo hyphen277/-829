@@ -1802,6 +1802,8 @@ if (ST.cardOpen) {
     });
     h += "</div>";
 
+    h += '<input class="search" id="wsearch" placeholder="在错题里搜：题干 / 考点 / 关键词" value="' + esc(A.ST.wq || "") + '">';
+
     var list;
     if (tab === "star") list = star.map(function (id) { return { id: id, w: { kind: "star", n: "" } }; });
     else if (tab === "no") list = no.map(function (id) { return { id: id, w: A.DB.wrong[id] }; });
@@ -1811,6 +1813,13 @@ if (ST.cardOpen) {
     list = list.filter(function (x) { return !!A.QMAP[x.id]; });
     if (wsubj) list = list.filter(function (x) { return A.QMAP[x.id].subject === wsubj; });
     if (A.ST.wwhy) list = list.filter(function (x) { return x.w && x.w.why === A.ST.wwhy; });
+    var wq = (A.ST.wq || "").trim().toLowerCase();
+    if (wq) list = list.filter(function (x) {
+      var q = A.QMAP[x.id];
+      var names = (q.kp || []).map(function (k) { return (A.KPMAP[k] || {}).name || k; }).join(" ");
+      var hay = (String(q.stem || "") + " " + names + " " + (q.subject || "")).toLowerCase();
+      return hay.indexOf(wq) >= 0;
+    });
     list.sort(function (a, b) {
       var ra = A.DB.q[a.id] || {}, rb = A.DB.q[b.id] || {};
       var da = ra.due || "9999-99-99", db2 = rb.due || "9999-99-99";
@@ -2139,7 +2148,7 @@ if (ST.cardOpen) {
   /* ---------- 搜索框防抖 ---------- */
   var searchTimer = null;
   function hookSearch() {
-    [["#kpsearch", "nq", "kplist"], ["#lssearch", "lq", "lslist"], ["#fsearch", "fq", "flist"]].forEach(function (p) {
+    [["#kpsearch", "nq", "kplist"], ["#lssearch", "lq", "lslist"], ["#fsearch", "fq", "flist"], ["#wsearch", "wq", "wlist"]].forEach(function (p) {
       var el = $(p[0]);
       if (!el) return;
       el.addEventListener("input", function () {
