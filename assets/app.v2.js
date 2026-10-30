@@ -267,7 +267,7 @@
   };
 })(window.A = window.A || {});
 
-/* ==========================================================================
+﻿/* ==========================================================================
    829 训练台 v2 · p1 核心：工具 / 存储 / 数据索引 / 学习模型
    ========================================================================== */
 (function (A) {
@@ -282,8 +282,40 @@
       .replace(/"/g, "&quot;");
   };
   var pad = function (n) { return n < 10 ? "0" + n : "" + n; };
+  /* 上下标：纯文本预览里也把 R_2 / i_{R2} / ^{2} 变成 R₂ / iR₂ / ²，别退化成 R2 */
+  var SUBMAP = { "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉",
+    "+": "₊", "-": "₋", "=": "₌", "(": "₍", ")": "₎",
+    a: "ₐ", e: "ₑ", h: "ₕ", i: "ᵢ", j: "ⱼ", k: "ₖ", l: "ₗ", m: "ₘ", n: "ₙ", o: "ₒ", p: "ₚ", r: "ᵣ", s: "ₛ", t: "ₜ", u: "ᵤ", v: "ᵥ", x: "ₓ" };
+  var SUPMAP = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
+    "+": "⁺", "-": "⁻", "=": "⁼", "(": "⁽", ")": "⁾", n: "ⁿ", i: "ⁱ" };
+  var toSub = function (s) {
+    var o = "";
+    for (var i = 0; i < s.length; i++) {
+      var c = SUBMAP[s.charAt(i)] || SUBMAP[s.charAt(i).toLowerCase()];
+      if (!c) return null;
+      o += c;
+    }
+    return o;
+  };
+  var toSup = function (s) {
+    var o = "";
+    for (var i = 0; i < s.length; i++) {
+      var c = SUPMAP[s.charAt(i)];
+      if (!c) return null;
+      o += c;
+    }
+    return o;
+  };
+  var subsup = function (s) {
+    return String(s)
+      .replace(/_\{([^{}]{1,6})\}/g, function (m, x) { return toSub(x) || x; })
+      .replace(/\^\{([^{}]{1,6})\}/g, function (m, x) { return toSup(x) || x; })
+      .replace(/_([0-9A-Za-z])/g, function (m, x) { return toSub(x) || x; })
+      .replace(/\^([0-9])/g, function (m, x) { return toSup(x) || x; });
+  };
+  A.subsup = subsup;
   var plain = function (s) {
-    var t = String(s == null ? "" : s);
+    var t = subsup(String(s == null ? "" : s));
     t = t.replace(/\$\$([\s\S]+?)\$\$/g, " $1 ")
       .replace(/\\\[([\s\S]+?)\\\]/g, " $1 ")
       .replace(/\\\(([\s\S]+?)\\\)/g, " $1 ")
@@ -592,7 +624,7 @@
   function exportDB() {
     DB.backupAt = Date.now();
     save();
-    var payload = { app: "kaoyan829", v: 2, at: new Date().toISOString(), db: DB };
+    var payload = { app: "kaoyan829", v: 3, at: new Date().toISOString(), db: DB };
     var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     var a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -654,6 +686,21 @@
     saveNow(); toast("记录已清空", "ok"); A.render();
   }
   A.exportDB = exportDB; A.importDB = importDB; A.exportCSV = exportCSV; A.wipeDB = wipeDB;
+
+  /* 粘贴文本导入：与文件导入同一套校验与确认 */
+  function importText(txt) {
+    var o = null;
+    try { o = JSON.parse(String(txt || "").trim()); } catch (e) { toast("这段文本不是合法 JSON，检查有没有复制完整", "bad"); return; }
+    var d = (o && o.db) ? o.db : o;
+    if (!d || !d.q) { toast("这不像是 829 的备份", "bad"); return; }
+    if (A.ask) A.ask("导入会覆盖当前所有记录，确定吗？", function () {
+      DB = A.DB = migrate(d);
+      DB.backupAt = Date.now();
+      saveNow(); toast("导入成功", "ok");
+      A.render();
+    }, "导入");
+  }
+  A.importText = importText;
   A.backupInfo = function () {
     var at = DB.backupAt || 0;
     if (!at) return { at: 0, days: -1, text: "还没导出过备份", warn: true };
@@ -894,6 +941,8 @@
     return r;
   }
   function examDone(qid) { return !!(DB.exam && DB.exam[qid]); }
+  function examGrade(qid) { var r = DB.exam && DB.exam[qid]; return r ? (r.g || "") : ""; }
+  A.examGrade = examGrade;
 
   /* 真题到期复习：今天该重看的真题 id 列表（不会/不熟且到期） */
   function examIsDue(qid) {
@@ -1604,6 +1653,8 @@
       return h + '<div class="empty">这个筛选条件下没有题。<br><span class="tiny">换个场景试试</span></div>';
     }
     if (f.kw) h += '<div class="tiny muted kwline">关键词「' + esc(f.kw) + "」匹配到 " + ST.list.length + " 道（搜题干、解析、考点名）</div>";
+    if (!f.kw && !f.kp) h += '<div class="tiny muted kwline">下面是随堂练习 ' + A.QS.length +
+      " 道（自编，带解析）；真题原卷 " + (A.EPROB || []).length + " 道在「真题」页</div>";
 
     var n = ST.list.length;
     if (ST.qi >= n) ST.qi = 0;
@@ -1720,7 +1771,39 @@ if (ST.cardOpen) {
     h += '<div class="ptimerbar" id="ptimerbar">' +
       '<span class="ptimer" id="ptimer">--:--</span>' +
       '<button class="btn ghost sm" data-act="ptimer">开始计时（3 小时）</button>' +
-      '<button class="btn ghost sm" data-act="ptimer-clear">清零</button></div>';
+      '<button class="btn ghost sm" data-act="ptimer-clear">清零</button>' +
+      '<button class="btn primary sm" data-act="paper-submit">交卷复盘</button></div>';
+    var rv = ST.paperReview;
+    if (rv) {
+      var cnt = { ok: 0, fuzzy: 0, no: 0 }, done = 0;
+      probs.forEach(function (p) { var g = A.examGrade(p.id); if (g) { done++; cnt[g] = (cnt[g] || 0) + 1; } });
+      var rate = done ? Math.round(cnt.ok / done * 100) : 0;
+      h += '<div class="card reviewcard"><div class="h4">本卷复盘 <span class="tiny muted">' + esc(sch.short) + " · " + esc(String(year)) + " 年</span></div>";
+      h += '<div class="stats4">' +
+        '<div class="sb"><b>' + (rv.used == null ? "--" : rv.used) + '</b><span>用时(分)</span></div>' +
+        '<div class="sb"><b>' + done + "/" + probs.length + '</b><span>已自评</span></div>' +
+        '<div class="sb"><b>' + rate + '%</b><span>会做率</span></div>' +
+        '<div class="sb"><b>' + (cnt.fuzzy + cnt.no) + '</b><span>待补</span></div></div>';
+      if (done < probs.length) {
+        h += '<div class="tiny muted" style="margin-top:6px">还有 ' + (probs.length - done) + " 道没自评，下面逐题点一下就能补上，统计会实时更新。</div>";
+      }
+      h += '<div class="revlist">';
+      probs.forEach(function (p) {
+        var g = A.examGrade(p.id);
+        var mark = g === "ok" ? '<i class="rvok">会</i>' : g === "fuzzy" ? '<i class="rvfu">不熟</i>' : g === "no" ? '<i class="rvno">不会</i>' : '<i class="rvnone">未评</i>';
+        h += '<div class="rvrow' + (g === "no" || g === "fuzzy" ? " weak" : "") + '">' +
+          '<span class="rvno">' + esc(p.no || "") + "</span>" + mark +
+          '<span class="rvbtns">' +
+          '<button class="gbtn g-ok' + (g === "ok" ? " sel" : "") + '" data-act="grade-exam" data-v="' + p._i + '" data-g="ok">会</button>' +
+          '<button class="gbtn g-fu' + (g === "fuzzy" ? " sel" : "") + '" data-act="grade-exam" data-v="' + p._i + '" data-g="fuzzy">不熟</button>' +
+          '<button class="gbtn g-no' + (g === "no" ? " sel" : "") + '" data-act="grade-exam" data-v="' + p._i + '" data-g="no">不会</button>' +
+          "</span>" +
+          '<button class="ibtn" data-act="review-open" data-v="' + p._i + '" title="看这道题">›</button></div>';
+      });
+      h += "</div>";
+      h += '<div class="tiny muted" style="margin-top:8px">不熟和不会的题已经进了「重测」，明天会在首页提醒你再做一遍；想马上二刷就点每题右边的 ›。</div>';
+      h += "</div>";
+    }
     h += '<div class="paperbar">' +
       '<button class="btn ghost' + (i === 0 ? " dis" : "") + '" data-act="paper-go" data-v="' + (i - 1) + '">‹ 上一页</button>' +
       '<span class="paperno">' + (i + 1) + " / " + total + "</span>" +
@@ -1763,7 +1846,8 @@ if (ST.cardOpen) {
     var nShown = all.filter(examMatch).length;
     var doneAll = all.filter(function (p) { return A.examDone(p.id); }).length;
     h += '<h3>' + esc(sch.name) + " · " + all.length + " 道真题 · " + ys.length + " 个年份</h3>";
-    h += '<div class="tiny muted" style="margin:-2px 0 2px">已自评 ' + doneAll + " / " + all.length + " 道</div>";
+    h += '<div class="tiny muted" style="margin:-2px 0 2px">已自评 ' + doneAll + " / " + all.length + " 道　·　" +
+      "这里只放真题原卷；随堂练习 " + A.QS.length + " 道在「刷题」页，两套互不重复</div>";
     h += '<p class="muted tiny">题干按原卷整理成索引；点「原卷」看当年扫描页，题干和电路图都在上面，改动为零。' +
       "做题时用三档自评，判分由你自己来。选好年份后可以「看整卷」，配 3 小时倒计时模拟考场。</p>";
     /* 年份选择条：全放进来，横滑即可 */
@@ -2200,10 +2284,11 @@ if (ST.cardOpen) {
       h += '<div class="card daily">';
       h += '<div class="dh"><span class="dtag">每日一题</span><span class="tiny muted">' + esc(String(dq.year)) + " 年" +
         (dq.no ? " · " + esc(dq.no) : "") + (dq.points ? " · " + dq.points + " 分" : "") + "</span></div>";
-      h += '<div class="dst">' + md(A.lead(dq.brief || "", 110)) + "</div>";
+      h += '<div class="dst">' + md(dq.brief || "") + "</div>";
       if (pg.length) {
         h += '<div class="dthumb">' + A.figHTML(pg.slice(0, 1), "原卷") + "</div>";
-        h += '<div class="tiny muted">点缩略图放大；题干和电路图都在原卷扫描页上。</div>';
+        var pn = (String(pg[0] || "").match(/p(\d+)\.jpg/) || [])[1];
+        h += '<div class="tiny muted">上面是原卷' + (pn ? "第 " + Number(pn) + " 页" : "扫描页") + "，点图放大看完整题目和电路图。</div>";
       }
       h += '<div class="row"><button class="btn primary" data-act="open-exam" data-s="' + esc(dq._school || "shu") + '" data-v="' + dq._i + '">看原卷做题 ›</button></div>';
       h += "</div>";
@@ -2331,7 +2416,16 @@ if (ST.cardOpen) {
           (p.keys && p.keys.length ? " · 关键词：" + esc(p.keys.join("、")) : "") + "</div>";
         if (p.formulas && p.formulas.length) {
           h += '<div class="kpf">';
-          p.formulas.forEach(function (f) { h += "<div>" + md(f) + "</div>"; });
+          p.formulas.forEach(function (f) {
+            /* 数据里是 {t: LaTeX, n: 中文说明}；也兼容纯字符串 */
+            if (f && typeof f === "object") {
+              var ft = String(f.t == null ? "" : f.t);
+              h += '<div class="kpfrow"><div class="kpftex">' + A.tex(ft.replace(/^\$+|\$+$/g, "")) + "</div>" +
+                (f.n ? '<div class="kpfnote">' + esc(f.n) + "</div>" : "") + "</div>";
+            } else {
+              h += '<div class="kpfrow"><div class="kpftex">' + md(String(f == null ? "" : f)) + "</div></div>";
+            }
+          });
           h += "</div>";
         }
         h += '<div class="row">' +
@@ -2428,11 +2522,15 @@ if (ST.cardOpen) {
     var F = window.FORMULAS || [];
     if (!F.length) return '<div class="empty">公式库还没装进来。</div>';
     var h = "", last = "";
+    /* 分组标题里已经带了「电路」「信号」，卡片就不再重复一遍 */
+    var short = function (c) { return String(c).replace(/^(电路|信号)\s*·\s*/, "").trim(); };
     F.forEach(function (f) {
+      if (f.name === f.ch) return;            /* 纯分组标题行，不渲染成卡 */
       var hay = (f.ch + " " + f.name + " " + (f.tags || []).join(" ") + " " + f.tex).toLowerCase();
       if (q && hay.indexOf(q) < 0) return;
-      if (f.ch !== last) { h += '<div class="chhead"><b>' + esc(f.ch) + "</b></div>"; last = f.ch; }
-      h += '<div class="fmlcard"><div class="fname">' + esc(f.name) + "</div>" +
+      if (f.ch !== last) { h += '<div class="chhead"><b>' + esc(short(f.ch)) + "</b></div>"; last = f.ch; }
+      var nm = short(f.name);
+      h += '<div class="fmlcard">' + '<div class="fname">' + esc(nm) + "</div>" +
         '<div class="fml">' + md(f.tex) + "</div>" + "</div>";
     });
     return h || '<div class="empty">没找到这个公式。</div>';
@@ -2448,7 +2546,7 @@ if (ST.cardOpen) {
 
     var h = "";
     h += '<div class="card"><h3>重测题库</h3>' +
-      '<p class="tiny muted">答「不熟悉」或「不会」的题自动进来；连续答对 3 次才移出。</p>' +
+      '<p class="tiny muted">两个队列别搞混：<b>首页「今天该复习」</b>是按遗忘曲线到期的题（清完当天就不用再管）；<b>这里</b>是累积的错题本，什么时候想重做都行。连续答对 3 次才移出。</p>' +
       '<div class="row"><button class="btn primary" data-act="start-wrong">全部重测 (' + ids.length + ")</button>" +
       '<button class="btn ghost" data-act="export-csv">导出 CSV</button></div></div>';
 
@@ -2746,7 +2844,9 @@ if (ST.cardOpen) {
     h += '<div class="card"><div class="h4">AI 答疑 <span class="tiny muted">' + (hasKey ? "已设置 Key" : "未设置（可选）") + "</span></div>";
     if (hasKey) {
       h += '<div class="tiny muted">刷题时右下角 ✦ 就能问，会带上当前这道题。回答只花你自己的额度。</div>' +
-        '<div class="row"><button class="btn sm" data-act="askai">打开问 AI</button></div>';
+        '<div class="tiny muted">Key 只存在这台设备的浏览器里；公共电脑用完记得清掉。</div>' +
+        '<div class="row"><button class="btn sm" data-act="askai">打开问 AI</button>' +
+        '<button class="btn ghost sm" data-act="ai-clearkey">清除本机 Key</button></div>';
     } else {
       h += '<ol class="ailist">' +
         "<li>打开 platform.deepseek.com 注册，实名后送一点额度（够问很多题）。</li>" +
@@ -2773,8 +2873,10 @@ if (ST.cardOpen) {
       '<div class="tiny ' + (A.backupInfo().warn ? "" : "muted") + '">' + esc(A.backupInfo().text) +
       '。记录只存在这台设备的浏览器里，换设备或清缓存前先导出。</div>' +
       '<div class="row"><button class="btn sm" data-act="export">导出备份</button>' +
-      '<button class="btn ghost sm" data-act="import">导入备份</button>' +
+      '<button class="btn ghost sm" data-act="import">选文件导入</button>' +
       '<button class="btn ghost sm" data-act="export-csv">导出错题 CSV</button></div>' +
+      '<div class="row"><button class="btn ghost sm" data-act="import-paste">粘贴备份文本导入</button></div>' +
+      '<div class="tiny muted">备份里带版本号，以后题库升级了旧备份也能认。换设备最方便的做法：旧手机「导出备份」把文字发给自己，新手机点「粘贴备份文本导入」。</div>' +
       '<div class="row"><button class="btn danger sm" id="wipeBtn" data-act="wipe">清空所有记录</button></div>' +
       "</div>";
     h += '<div class="tiny muted center" style="margin:18px 0">829 训练台 · 电路 + 信号　本地离线可用</div>';
@@ -2941,6 +3043,7 @@ if (ST.cardOpen) {
   /* ---------- 路由 ---------- */
   function go(tab) {
     SUB.lesson = null; SUB.formula = 0; SUB.examone = -1; SUB.fig = -1;
+    if (tab !== "exam") ST.paperReview = null;   /* 离开真题页就不再显示上一份复盘 */
     ST.tab = tab;
     if (tab === "drill") { ST.pin = null; A.buildList(); }
     render();
@@ -3043,21 +3146,45 @@ if (ST.cardOpen) {
   });
   on("find-lesson", function (el) {
     var k = el.getAttribute("data-v");
+    var lid = A.lessonOfKp ? A.lessonOfKp(k) : null;
+    if (!lid) {
+      A.toast("这个考点没有单独成讲的讲义，直接去题库练更快", "warn");
+      return;
+    }
+    function jump() {
+      ST.lq = "";                 /* 不再把课程标题塞进搜索框 */
+      openLesson(lid);
+      var p = A.KPMAP[k] || {};
+      var cands = (p.keys || []).slice(0, 6).concat([p.name || "", k]);
+      setTimeout(function () {
+        var root = document.querySelector(".lessonpage");
+        var txt = root ? (root.textContent || "").toLowerCase() : "";
+        var kw = "";
+        for (var i = 0; i < cands.length; i++) {
+          var c = String(cands[i] || "").trim();
+          if (c.length >= 2 && txt.indexOf(c.toLowerCase()) >= 0) { kw = c; break; }
+        }
+        var mk = kw ? findHighlight(kw) : null;
+        var lm = A.LESSON_MAP[lid];
+        if (mk) {
+          mk.scrollIntoView({ block: "center" });
+          A.toast("已打开「" + A.lead(lm ? lm.title : "讲义", 12) + "」，正文里标出的地方就是它", "ok");
+        } else {
+          window.scrollTo(0, 0);
+          A.toast("这一讲的正文没单独写这个考点，去题库练它更直接", "warn");
+        }
+      }, 120);
+    }
     if (!A.lessonsReady()) {
-      A.ensureLessons(function () {
-        var l = document.querySelector('[data-act=find-lesson][data-v="' + k + '"]');
-        if (l) l.click();
-      });
+      A.ensureLessons(function () { jump(); });
       A.toast("正在加载讲义…");
       return;
     }
-    var hit = A.LESSONS.filter(function (l) { return String(l.md || "").indexOf(k) >= 0; });
-    if (!hit.length) { A.toast("这一讲的讲义里没单独写它，去题库练更直接", "warn"); return; }
-    ST.noteTab = "lesson"; ST.lq = hit[0].title.slice(0, 6);
-    SUB.lesson = hit[0].id; render();
+    jump();
   });
   function openLesson(id) {
     go("notes");              /* go 会清空 SUB，必须先 go 再设 */
+    ST.lq = "";               /* 进正文就把列表搜索清空，回来是干净的 */
     SUB.lesson = id;
     A.markRead(id);
     render();
@@ -3282,6 +3409,12 @@ if (ST.cardOpen) {
     A.ask("清空所有做题记录？这个动作不可撤销。建议先导出备份。", function () { A.wipeDB(); }, "清空");
   });
 
+  /* 粘贴文本导入：换设备时比传文件方便 */
+  on("import-paste", function () {
+    A.ask("把旧设备导出的备份文字粘进来（很长也没关系），粘贴完点确定。",
+      function (txt) { A.importText(txt); }, "导入", null, "paste");
+  });
+
   /* 刷题 */
   on("prev", function () { if (ST.qi > 0) { ST.qi--; render(); } });
   on("next", function () { if (ST.qi < ST.list.length - 1) { ST.qi++; render(); } });
@@ -3405,14 +3538,43 @@ if (ST.cardOpen) {
   on("ptimer", function () {
     if (!SUB.paper) return;
     var y = SUB.paper.year;
-    if (timerEnd(y)) { timerSet(y, 0); A.toast("已清零"); }
-    else { timerSet(y, Date.now() + 3 * 3600 * 1000); A.toast("开始计时，3 小时"); }
+    if (timerEnd(y)) { timerSet(y, 0); timerSet("start-" + y, 0); A.toast("已清零"); }
+    else {
+      timerSet(y, Date.now() + 3 * 3600 * 1000);
+      timerSet("start-" + y, Date.now());
+      A.toast("开始计时，3 小时");
+    }
     paintTimer();
     render();
   });
   on("ptimer-clear", function () {
     if (!SUB.paper) return;
-    timerSet(SUB.paper.year, 0); render(); A.toast("已清零");
+    timerSet(SUB.paper.year, 0); timerSet("start-" + SUB.paper.year, 0); render(); A.toast("已清零");
+  });
+
+  /* 交卷：停表 + 生成本卷复盘（用时、会做率、逐题对错） */
+  on("paper-submit", function () {
+    if (!SUB.paper) return;
+    var y = SUB.paper.year, st = timerMap()["start-" + y] || 0;
+    var used = st ? Math.max(1, Math.round((Date.now() - st) / 60000)) : null;
+    timerSet(y, 0);
+    ST.paperReview = { used: used, at: Date.now() };
+    render();
+    window.scrollTo(0, 0);
+    A.toast(used ? "已交卷，用时 " + used + " 分钟" : "已交卷（没开计时，用时未知）", "ok");
+  });
+  on("review-open", function (el) {
+    var i = parseInt(el.getAttribute("data-v"), 10);
+    var s = el.getAttribute("data-s") || ST.examSchool || "shu";
+    var p = examAt(i);
+    if (!p) return;
+    ST.paperReview = null;
+    SUB.paper = null;
+    SUB.examone = i;
+    SUB.examschool = p._school || s;
+    ST.examSchool = SUB.examschool;
+    render();
+    window.scrollTo(0, 0);
   });
   setInterval(paintTimer, 1000);
 
@@ -3485,6 +3647,7 @@ if (ST.cardOpen) {
     A.recordExam(p.id, g);
     var r = (g === "ok" ? "右侧 " : "") + (g === "ok" ? "会" : g === "fuzzy" ? "不熟" : "不会");
     A.toast("已记录：" + r, g === "ok" ? "ok" : "warn");
+    if (ST.paperReview) { render(); return; }   /* 复盘面板里改了判定，立刻重算统计 */
     $$(".grade3 .gbtn").forEach(function (b) { b.classList.remove("sel"); });
     el.classList.add("sel");
   });
@@ -3518,7 +3681,7 @@ if (ST.cardOpen) {
   on("theme", function () { A.applyTheme(A.THEME() === "dark" ? "light" : "dark"); });
 
   /* ---------- 站内确认框（替掉原生 confirm，手机上更稳） ---------- */
-  function ask(msg, okFn, okText, extras) {
+  function ask(msg, okFn, okText, extras, mode) {
     var old = $("#asksheet"); if (old && old.remove) old.remove();
     var d = document.createElement("div");
     d.id = "asksheet";
@@ -3528,6 +3691,7 @@ if (ST.cardOpen) {
       ex += '<button class="btn ghost" data-extra="' + i + '">' + esc(x.t) + "</button>";
     });
     d.innerHTML = '<div class="askbox"><p>' + esc(msg) + "</p>" +
+      (mode === "paste" ? '<textarea id="askpaste" class="askpaste" placeholder="粘贴备份 JSON 文本"></textarea>' : "") +
       '<div class="askbtns"><button class="btn ghost" data-ask="0">取消</button>' + ex +
       '<button class="btn primary" data-ask="1">' + esc(okText || "确定") + "</button></div></div>";
     document.body.appendChild(d);
@@ -3537,8 +3701,10 @@ if (ST.cardOpen) {
       if (!b) return;
       e.preventDefault();
       e.stopPropagation();
+      var ta = document.getElementById("askpaste");
+      var val = ta ? ta.value : "";
       d.remove();
-      if (b.getAttribute("data-ask") === "1" && okFn) okFn();
+      if (b.getAttribute("data-ask") === "1" && okFn) okFn(val);
     });
     d.addEventListener("click", function (e) {
       var b = e.target.closest ? e.target.closest("[data-extra]") : null;
@@ -3698,10 +3864,25 @@ if (ST.cardOpen) {
       }
       return pump();
     }).catch(function (err) {
-      out.innerHTML = '<div class="aibad">失败了：' + esc(err.message) + "</div>" +
-        '<div class="tiny muted">常见原因：Key 错、网络不通（需要能访问 api.deepseek.com）、余额不足。</div>';
+      var msg = String(err && err.message || err || "");
+      var hint = "常见原因：Key 不对、网络不通（要能访问接口地址）、余额不足。";
+      if (/401|403/.test(msg)) hint = "Key 不对或没有权限：去「我的 → AI 答疑」重新粘一次 Key。";
+      else if (/429/.test(msg)) hint = "请求太频繁或额度用完：等一会儿再试，或去平台看余额。";
+      else if (/Failed to fetch|NetworkError|network/i.test(msg)) hint = "网络没通：确认手机能上网，或者这个接口地址被墙。";
+      out.innerHTML = '<div class="aibad">失败了：' + esc(msg) + "</div>" +
+        '<div class="tiny muted">' + esc(hint) + "</div>" +
+        '<div class="row"><button class="btn ghost sm" data-act="ai-send">再试一次</button></div>';
     });
   }
+
+  /* 清掉本机 Key（公共电脑 / 换设备） */
+  on("ai-clearkey", function () {
+    A.ask("清除这台设备上保存的 API Key？清完 AI 就不能用了，做题不受影响。", function () {
+      try { localStorage.removeItem(AIKEY); } catch (e) { }
+      A.toast("已清除本机 Key", "ok");
+      render();
+    }, "清除");
+  });
 
   /* ---------- 全局点击委托 ---------- */
   document.addEventListener("click", function (e) {
@@ -3724,7 +3905,17 @@ if (ST.cardOpen) {
       return;
     }
     var nt = el.getAttribute("data-nt");
-    if (nt) { e.preventDefault(); ST.noteTab = nt; render(); return; }
+    if (nt) {
+      e.preventDefault();
+      /* 切换二级页签时清掉上一页的搜索词与筛选，避免「一进来就带着上次的关键词」 */
+      ST.noteTab = nt;
+      ST.lq = ""; ST.nq = "";
+      if (nt !== "exam") { ST.examQ = ""; }
+      SUB.lesson = null;
+      render();
+      window.scrollTo(0, 0);
+      return;
+    }
   });
 
   /* 用事件委托接管 chips 的 data-act="nsubj" 等已覆盖；这里补 tab 点击 */
@@ -3848,6 +4039,7 @@ if (ST.cardOpen) {
     else clickIf('[data-act="prev"]');
   }, { passive: true });
 
+  A.SUB = SUB; A.ST = ST;
   A.boot = boot;
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();
