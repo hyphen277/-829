@@ -1,4 +1,269 @@
 /* 829 训练台 v2 · 单文件构建（由 _build/p*.js 合成，勿手改） */
+/* ============================================================
+   p0_fig.js —— 简笔电路图（SVG）
+   给自编练习题配示意图。原则：
+   · 只画题干里讲清楚的连接关系，参数照抄题干；
+   · 画不准就不画（宁可没有图，也不给错图）；
+   · 图上标「示意图 · 以题干文字为准」。
+   图元统一按「水平放置、占 x∈[-16,16]」绘制，竖放时整体旋转 90°。
+   ============================================================ */
+(function (A) {
+  var C = "#55606d";
+  var CF = "#f7f9fb";
+  var TX = "#2b3542";
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+  function W(x1, y1, x2, y2) { return "M" + x1 + " " + y1 + "L" + x2 + " " + y2; }
+  function wire(x1, y1, x2, y2) { return '<path d="' + W(x1, y1, x2, y2) + '"/>'; }
+  function dot(x, y) { return '<circle cx="' + x + '" cy="' + y + '" r="2.8" fill="' + C + '" stroke="none"/>'; }
+  function cjkW(str) {
+    var w = 0;
+    for (var i = 0; i < str.length; i++) w += str.charCodeAt(i) > 255 ? 1 : 0.56;
+    return w;
+  }
+  function fit(t, max) {
+    if (!t) return t;
+    t = String(t);
+    if (cjkW(t) <= max) return t;
+    var out = "";
+    for (var i = 0; i < t.length; i++) {
+      if (cjkW(out + t[i]) > max - 1) return out + "…";
+      out += t[i];
+    }
+    return out;
+  }
+  function lbl(x, y, t, anchor, size) {
+    if (!t) return "";
+    t = String(t);
+    var sz = size || (cjkW(t) > 15 ? 8.4 : cjkW(t) > 11 ? 9.2 : 10.5);
+    return '<text x="' + x + '" y="' + y + '" font-size="' + sz + '" fill="' + TX + '"' +
+      (anchor ? ' text-anchor="' + anchor + '"' : "") + ">" + esc(t) + "</text>";
+  }
+
+  /* ---------- 图元（水平、以原点为中心、端点 ±16） ---------- */
+  function bodyR() {
+    return '<rect x="-16" y="-6" width="32" height="12" rx="1.5" fill="' + CF + '"/>';
+  }
+  function bodyC() {
+    return '<path d="M-16 0H-4M4 0H16"/>' +
+      '<path d="M-4 -11V11M4 -11V11"/>';
+  }
+  function bodyL() {
+    var d = "M-16 0h4";
+    for (var i = 0; i < 4; i++) d += "a4 4 0 0 1 8 0";
+    return '<path d="' + d + '"/>';
+  }
+  function bodyV(plus) {
+    var s = '<path d="M-16 0H-13M13 0H16"/><circle cx="0" cy="0" r="13" fill="' + CF + '"/>';
+    if (plus === "up") s += lbl(-6.5, 4, "+", "middle", 10) + lbl(6, 4, "−", "middle", 10);
+    else s += lbl(-6.5, 4, "−", "middle", 10) + lbl(6, 4, "+", "middle", 10);
+    return s;
+  }
+  function bodyI(up) {
+    var s = '<path d="M-16 0H-13M13 0H16"/><circle cx="0" cy="0" r="13" fill="' + CF + '"/>';
+    s += up
+      ? '<path d="M0 9V-9"/><path d="M-4 -4L0 -9L4 -4Z" fill="' + C + '" stroke="none"/>'
+      : '<path d="M0 -9V9"/><path d="M-4 4L0 9L4 4Z" fill="' + C + '" stroke="none"/>';
+    return s;
+  }
+  function bodyD(kind) {
+    var s = '<path d="M-16 0H-13M13 0H16"/><path d="M0 -13L13 0L0 13L-13 0Z" fill="' + CF + '"/>';
+    if (kind === "i") s += '<path d="M0 7V-7"/><path d="M-4 -3L0 -8L4 -3Z" fill="' + C + '" stroke="none"/>';
+    else s += lbl(-5, 4, "+", "middle", 9) + lbl(5, 4, "−", "middle", 9);
+    return s;
+  }
+  function bodySW(closed) {
+    return dot(-14, 0) + dot(14, 0) + '<path d="M-16 0H-14M14 0H16"/>' +
+      (closed ? '<path d="M-13 0H13"/>' : '<path d="M-13 0L8 -13"/>');
+  }
+  function bodyGND() {
+    return '<path d="M0 -16V-4M-9 -4H9M-6 0H6M-3 4H3"/>';
+  }
+
+  /* 元件统一入口：vert = 竖放 */
+  function elAt(x, y, e, vert) {
+    if (!e) return "";
+    var k = e.k, body, lab;
+    var up = e._below ? 1 : 0;   /* 标签放到元件另一侧，错开相邻标签 */
+    var ly = up ? 22 : -1, lyc = up ? 26 : -1;
+    if (k === "R") { body = bodyR(); lab = lbl(0, up ? 21 : -12, fit(e.l, 17), "middle"); }
+    else if (k === "C") { body = bodyC(); lab = lbl(0, up ? 24 : -16, e.l, "middle"); }
+    else if (k === "L") { body = bodyL(); lab = lbl(0, up ? 20 : -10, e.l, "middle"); }
+    else if (k === "V") { body = bodyV(e.plus); lab = lbl(0, up ? 28 : -18, e.l, "middle"); }
+    else if (k === "I") { body = bodyI(e.dir !== "down"); lab = lbl(0, up ? 28 : -18, e.l, "middle"); }
+    else if (k === "CV") { body = bodyD("v"); lab = lbl(0, up ? 30 : -20, e.l, "middle"); }
+    else if (k === "CI") { body = bodyD("i"); lab = lbl(0, up ? 30 : -20, e.l, "middle"); }
+    else if (k === "sw") { body = bodySW(e.closed); lab = lbl(0, up ? 20 : -16, e.l, "middle"); }
+    else if (k === "gnd") { body = bodyGND(); lab = ""; }
+    else return lbl(x, y, e.l);
+
+    if (vert) {
+      /* 竖放：绕自身旋转 90°，标签放到右侧 */
+      return '<g transform="translate(' + x + "," + y + ') rotate(90)">' + body + "</g>" +
+        (e.l ? (e._left ? lbl(x - 17, y + 3.5, fit(e.l, 22), "end") : lbl(x + 17, y + 3.5, fit(e.l, 22))) : "");
+    }
+    /* 横放：图形与标签一起平移（标签此前漏了平移，会跑到左上角） */
+    return '<g transform="translate(' + x + "," + y + ')">' + body + lab + "</g>";
+  }
+
+  /* ---------- 串联回路 ---------- */
+  function genLoop(a) {
+    var els = a.els || [];
+    var hasPar = els.some(function (e) { return e.par; });
+    var Wd = a.w || 320, Hd = a.h || 148;
+    if (hasPar) Hd += 30;
+    var x0 = 36, x1 = Wd - 26, yT = 40, yB = Hd - 30;
+    var s = "";
+    s += wire(x0, yT, x0, yB) + wire(x1, yT, x1, yB) + wire(x0, yB, x1, yB);
+    if (a.rightSrc) {
+      s += elAt(x1, (yT + yB) / 2, { k: "V", l: a.rightSrcL, plus: a.rightPlus || "up" }, true);
+    }
+    /* 电源在左边竖放 */
+    var my = (yT + yB) / 2;
+    s += elAt(x0, my, { k: "V", l: a.srcL, plus: a.plus || "up" }, true);
+    /* 顶边：元件均分 */
+    var n = Math.max(1, els.length), step = (x1 - x0) / n;
+    s += wire(x0, yT, x1, yT);
+    els.forEach(function (e, i) {
+      var cx = x0 + step * (i + 0.5);
+      var ee = {}; for (var kk in e) ee[kk] = e[kk];
+      ee._below = (i % 2 === 1);
+      s += elAt(cx, yT, ee, false);
+      s += dot(cx - 16, yT) + dot(cx + 16, yT);
+      if (e.par) {
+        var py = yT + 36;
+        s += wire(cx - 16, yT, cx - 16, py) + wire(cx + 16, yT, cx + 16, py);
+        var pp = {}; for (var kk in e.par) pp[kk] = e.par[kk]; pp._below = true;
+        s += elAt(cx, py, pp, false) + dot(cx - 16, py) + dot(cx + 16, py);
+      }
+    });
+    if (a.sw) s += elAt(x0 + 56, yB, { k: "sw", l: a.swL || "开关", closed: !!a.swClosed }, false);
+    return { w: Wd, h: Hd, body: s };
+  }
+
+  /* ---------- 并联（电流源或电压源 + 若干横支路） ---------- */
+  function genParallel(a) {
+    var br = a.br || [], Wd = a.w || 356, Hd = a.h || 132;
+    var x0 = 108, x1 = Wd - 26, yT = 40, yB = Hd - 30;
+    var s = wire(x0, yT, x1, yT) + wire(x0, yB, x1, yB);
+    var srcE = {}; for (var q in (a.src || { k: "V", l: "U", plus: "up" })) srcE[q] = a.src[q];
+    if (!a.src) { srcE = { k: "V", l: "U", plus: "up" }; }
+    srcE._left = true;
+    s += elAt(x0, (yT + yB) / 2, srcE, true);
+    var n = br.length, step = (x1 - x0) / (n + 0.8);
+    br.forEach(function (e, i) {
+      var cx = x0 + step * (i + 0.9);
+      s += dot(cx, yT) + dot(cx, yB);
+      if (e && e.els) s += elStack(cx, yT + 8, yB - 8, e.els);
+      else { var ee = {}; for (var kk in e) ee[kk] = e[kk]; ee._below = (i % 2 === 1); s += elAt(cx, (yT + yB) / 2, ee, true); }
+    });
+    return { w: Wd, h: Hd, body: s };
+  }
+
+  /* ---------- 节点式：节点 + 向下的支路栈（可含电源支路） ---------- */
+  function elStack(x, y1, y2, els) {
+    if (!els || !els.length) return wire(x, y1, x, y2);
+    var n = els.length, h = (y2 - y1) / n, s = "";
+    els.forEach(function (e, i) {
+      s += elAt(x, y1 + h * (i + 0.5), e, true);
+    });
+    return s;
+  }
+  function genNode(a) {
+    var nodes = a.nodes || [], Wd = a.w || 330, Hd = a.h || 176;
+    var yN = 40, yG = Hd - 30, x0 = a.leftChain ? 96 : 44;
+    var s = "";
+    var xs = nodes.map(function (_, i) { return x0 + i * (a.gap || 92); });
+    /* 左电源链：从电源到第一个节点，横着排 */
+    if (a.leftChain) {
+      var y = yN, cx = 36;
+      s += elAt(cx, y, a.leftChain[0], false);
+      var x = cx + 20;
+      for (var i = 1; i < a.leftChain.length; i++) {
+        x += 34;
+        s += elAt(x, y, a.leftChain[i], false);
+      }
+      s += wire(x + 16, y, xs[0], y);
+      s += elAt(cx, yG, { k: "gnd" }, true) + wire(cx, yG, cx, y + 16);
+    }
+    s += wire(x0, yG, xs[xs.length - 1], yG);
+    if (xs.length > 1) s += wire(xs[0], yN, xs[xs.length - 1], yN);
+    nodes.forEach(function (nd, i) {
+      var x = xs[i];
+      s += dot(x, yN) + (nd.n ? lbl(x + 6, yN - 8, nd.n) : "");
+      var brs = nd.br || [];
+      brs.forEach(function (b, k) {
+        var bx = x + (k === 0 ? 0 : (k % 2 ? 1 : -1) * 32 * Math.ceil(k / 2));
+        if (k) s += wire(x, yN, bx, yN) + dot(x, yN);
+        var els = b.els || (b.k ? [b] : []);
+        s += wire(bx, yN, bx, yN + 10);
+        s += elStack(bx, yN + 10, yG - 10, els);
+        s += wire(bx, yG - 10, bx, yG);
+        if (b.land) s += dot(bx, yG) + lbl(bx + 5, yG + 13, b.land);
+        else s += elAt(bx, yG, { k: "gnd" }, true);
+      });
+    });
+    return { w: Wd, h: Hd, body: s };
+  }
+
+
+  /* ---------- 一端口 / 二端网络盒子 ---------- */
+  function genBox(a) {
+    var Wd = a.w || 300, Hd = a.h || 150;
+    var bx = 96, by = 44, bw = 104, bh = 66;
+    var s = "";
+    s += '<rect x="' + bx + '" y="' + by + '" width="' + bw + '" height="' + bh + '" rx="3" fill="' + CF + '"/>';
+    s += lbl(bx + bw / 2, by + bh / 2 + 4, a.name || "含源一端口 N", "middle", 10.5);
+    if (a.sub) s += lbl(bx + bw / 2, by + bh + 16, a.sub, "middle", 9);
+    /* 右端两个端子 a / b */
+    s += dot(bx + bw, by + 14) + lbl(bx + bw + 6, by + 10, "a");
+    s += dot(bx + bw, by + bh - 14) + lbl(bx + bw + 6, by + bh - 18, "b");
+    if (a.load) {
+      var lx = bx + bw + 54;
+      s += wire(bx + bw, by + 14, lx, by + 14) + wire(bx + bw, by + bh - 14, lx, by + bh - 14) +
+        wire(lx, by + 14, lx, by + 22) + wire(lx, by + bh - 22, lx, by + bh - 14) +
+        elAt(lx, (by + 14 + by + bh - 14) / 2, a.load, true);
+      s += lbl(lx + 17, by + bh / 2 + 4, a.loadL || "");
+    }
+    if (a.left) {
+      s += wire(16, by + 14, bx, by + 14) + wire(16, by + bh - 14, bx, by + bh - 14);
+      s += lbl(18, by + 8, a.left[0] || "") ;
+      if (a.leftMesh !== false) s += elAt(16, (by + 14 + by + bh - 14) / 2, { k: "V", l: a.leftL || "U" }, true);
+    }
+    return { w: Wd, h: Hd, body: s };
+  }
+
+  function svg(o) {
+    var pad = 8;
+    return '<svg class="cfig" viewBox="0 0 ' + (o.w + pad * 2) + " " + (o.h + pad * 2) + '" ' +
+      'style="display:block;width:100%;max-width:' + (o.w + pad * 2) + 'px;height:auto" role="img">' +
+      '<g stroke="' + C + '" stroke-width="1.7" stroke-linecap="round" fill="none" transform="translate(' + pad + "," + pad + ')">' +
+      o.body + "</g></svg>";
+  }
+
+  A.cfig = function (kind, a) {
+    var o;
+    if (kind === "loop") o = genLoop(a || {});
+    else if (kind === "parallel") o = genParallel(a || {});
+    else if (kind === "node") o = genNode(a || {});
+    else if (kind === "box") o = genBox(a || {});
+    else return "";
+    return svg(o);
+  };
+})(window.A = window.A || {});
+/* 题目 id → 图 */
+(function (A) {
+  A.qfig = function (id) {
+    var spec = window.QFIGS && window.QFIGS[id];
+    if (!spec) return "";
+    try { return A.cfig(spec.t, spec.a); } catch (e) { return ""; }
+  };
+})(window.A = window.A || {});
+
 /* ==========================================================================
    829 训练台 v2 · p1 核心：工具 / 存储 / 数据索引 / 学习模型
    ========================================================================== */
@@ -1184,6 +1449,7 @@
     h += "</div>";
 
     h += '<div class="stem">' + md(q.stem) + "</div>";
+    if (A.qfig) { var fg = A.qfig(q.id); if (fg) h += '<div class="qfig">' + fg + "</div>"; }
     if (q.fig && q.fig.length) h += figHTML(q.fig, "题图");
     h += '<div class="qbody" id="qbody"></div>';
     h += '<div id="qafter"></div>';
@@ -1311,6 +1577,10 @@
     h += "</div>";
 
     h += chipRow([["", "全部科目"], ["电路", "电路"], ["信号", "信号"]], f.subject, "subject");
+
+    /* 读图专项：换一种练法，专门看带电路图的真题 */
+    h += '<div class="row" style="margin:2px 0 6px"><button class="btn ghost sm figentry" data-act="figdrill">' +
+      '⚡ 读图专项 · 只看带电路图的真题（' + (A.figList() || []).length + " 道）</button></div>";
 
     /* 关键词筛选：只在本轮列表里搜，不动题库 */
     h += '<div class="kwrow"><input id="kwsearch" class="kwsearch" type="search" placeholder="搜题干 / 解析 / 考点关键词" value="' +
@@ -1475,8 +1745,6 @@ if (ST.cardOpen) {
 
     h += '<div class="card examhead">';
     h += schoolChips();
-    h += '<div class="row" style="margin-top:8px"><button class="btn ghost sm" data-act="figdrill">⚡ 读图专项 · 带图的电路真题（' +
-      (A.figList() || []).length + " 道）</button></div>";
 
     if (!sch.ready) {
       h += '<div class="muted tiny" style="margin-top:10px">' + esc(sch.name) +
@@ -1783,13 +2051,11 @@ if (ST.cardOpen) {
     /* 倒计时 + 今日目标 */
     var c = A.cfg(), dl = A.daysLeft(), goal = c.goal || 30;
     var gpct = Math.min(100, Math.round((L.n || 0) / goal * 100));
-    h += '<div class="card goalcard">';
-    h += '<div class="goalrow"><span class="goalnum">' + (dl > 0 ? dl : 0) + '</span>' +
-      '<span class="goaltxt">' + (dl > 0 ? "天后上考场" : dl === 0 ? "今天上考场" : "考试已结束") +
-      '<br><i class="tiny muted">' + esc(c.examDate) + "</i></span>" +
-      '<span class="goalrate">' + (L.n || 0) + " / " + goal + "</span></div>";
-    h += '<div class="pbar thin" style="margin-top:8px"><i style="width:' + gpct + '%"></i><span>今日目标 ' + gpct + "%</span></div>";
-    h += "</div>";
+    /* 今日目标（不再用方框卡片，只留一行进度；倒计时已按用户要求删掉） */
+    h += '<div class="goalline">' +
+      '<span class="tiny muted">今日目标 ' + (L.n || 0) + " / " + goal + '</span>' +
+      '<div class="pbar thin" style="margin-top:6px"><i style="width:' + gpct + '%"></i><span>今日目标 ' + gpct + "%</span></div></div>";
+    void dl;
 
     /* 加到桌面（PWA）引导：独立窗口里就不显示了 */
     var standalone = false;
