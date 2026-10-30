@@ -641,3 +641,16 @@ body.dark .qfig{background:#fff}
 
 /* 粘贴导入 */
 .askpaste{width:100%;height:110px;font-size:12px;font-family:ui-monospace,Consolas,monospace;border:1px solid #dde3ea;border-radius:8px;padding:8px;margin:6px 0}
+.kps{display:inline-block;font-style:normal;font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;margin-left:5px;vertical-align:1px}
+.rowsplit{height:1px;background:var(--line);margin:10px 0 8px}
+
+body.focus header.top,body.focus #nav{display:none}
+body.focus .scrow,body.focus .chips{display:none}
+body.focus{padding-top:6px}
+.focusbtn{margin-left:6px}
+
+.plantip{font-size:11.5px;color:var(--muted);margin:2px 2px 12px;line-height:1.55}
+
+.tag.slow{background:#fff1e6;color:#b4632a;border-color:#f0cfb4}
+.rvScore{margin:8px 0 4px;font-size:13px;color:var(--muted)}.rvScore b{font-size:20px;color:var(--ink);margin-right:2px}
+.rvweak{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:2px 0 6px}

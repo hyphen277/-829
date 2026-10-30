@@ -1113,6 +1113,16 @@
         o.n += r.n; o.ok += r.ok;
       });
     });
+    /* 真题自评也计入掌握度 */
+    ((A.SCHOOLS || []).reduce(function (a, sc) { return a.concat(sc.list || []); }, [])).forEach(function (p) {
+      var e = A.DB && A.DB.exam && A.DB.exam[p.id]; if (!e) return;
+      var kps = (p.kp && p.kp.length) ? p.kp : (p.points || []);
+      kps.forEach(function (k) {
+        if (!A.KPMAP[k]) return;
+        var o = st[k] = st[k] || { n: 0, ok: 0 };
+        o.n += 1; if (e.g === "ok") o.ok += 1;
+      });
+    });
     var out = [];
     Object.keys(A.KPMAP || {}).forEach(function (k) {
       var s = st[k] || { n: 0, ok: 0 };
@@ -1148,6 +1158,14 @@
   }
   A.dailyExam = dailyExam;
 
+  A.logTime = function (id, secs) {
+    if (!id || !(secs > 0)) return;
+    var r = A.DB.q[id] = A.DB.q[id] || { n: 0, ok: 0 };
+    r.ts = (r.ts || 0) + secs; r.tn = (r.tn || 0) + 1;
+    if (secs >= 120) { r.slow = (r.slow || 0) + 1; if (!r.due) r.due = A.addDays(A.todayStr(), 1); }
+  };
+  A.logTime = A.logTime;
+  A.avgTime = function (id) { var r = A.DB.q[id]; return (r && r.tn) ? Math.round(r.ts / r.tn) : 0; };
   A.record = record; A.recordExam = recordExam; A.examDone = examDone; A.examIsDue = examIsDue; A.examDueList = examDueList; A.noteGet = noteGet; A.noteSet = noteSet; A.noteCount = noteCount;
 
   /* 错因标签：同一个错题只挂一个标签，再点一次取消 */
@@ -1372,6 +1390,22 @@
         return hay.toLowerCase().indexOf(kw) >= 0;
       });
     }
+    /* 新题/混合：按考点薄弱度加权抽题——红色考点更容易出现，熟练考点降低频率 */
+    if ((f.mode === "" || f.mode === "new") && arr.length > 1) {
+      var krate = {};
+      (A.kpStats() || []).forEach(function (s) { krate[s.k] = s; });
+      arr = arr.map(function (x) {
+        var w = 1.2;                      /* 没练过的：略高于中位 */
+        (x.kp || []).forEach(function (k) {
+          var s = krate[k];
+          if (!s) return;
+          if (s.n === 0) return;
+          var ww = s.rate < 0.5 ? 2.6 : (s.rate < 0.7 ? 1.9 : (s.rate < 0.85 ? 1.1 : 0.55));
+          if (ww > w) w = ww;
+        });
+        return { q: x, key: Math.pow(Math.random(), 1 / w) };
+      }).sort(function (a, b) { return b.key - a.key; }).map(function (o) { return o.q; });
+    }
     if (ST.qi >= arr.length) ST.qi = 0;
     ST.list = arr;
   }
@@ -1482,10 +1516,17 @@
   A.feedbackHTML = feedbackHTML;
 
   function questionCard(q, idx, total) {
+    if (ST.qid !== q.id) { ST.qid = q.id; ST.qT0 = Date.now(); }
     var h = '<div class="qcard">';
     h += '<div class="qtop">';
     h += '<span class="tag ' + (q.subject === "信号" ? "sig" : "cir") + '">' + esc(q.subject) + "</span>";
     h += '<span class="tag t">' + esc(TYPE_CN[q.type] || q.type || "题") + "</span>";
+
+    try {
+      var _r = A.DB.q[q.id] || {};
+      if (_r.slow) h += '<span class="tag slow">慢题 ×' + _r.slow + "</span>";
+      if (_r.tn) h += '<span class="tiny muted">均 ' + A.avgTime(q.id) + "s</span>";
+    } catch (e1) { }
     (q.kp || []).slice(0, 2).forEach(function (k) {
       var p = A.KPMAP[k];
       if (p) h += '<span class="tag">' + esc(p.name.length > 12 ? p.name.slice(0, 12) + "…" : p.name) + "</span>";
@@ -1546,6 +1587,7 @@
   function pickOption(i) {
     var q = ST.list[ST.qi];
     if (!q || q.__picked != null) return;
+    if (ST.qid === q.id && ST.qT0 && A.logTime) A.logTime(q.id, Math.round((Date.now() - ST.qT0) / 1000));
     q.__picked = i;
     var right = (q.answer == null) ? null : (i === q.answer);
     A.$$("#qbody .opt").forEach(function (b, j) {
@@ -1664,6 +1706,7 @@
     h += '<div class="tiny qbar">第 <input id="jump" class="jump" type="number" min="1" max="' + n + '" value="' +
       (ST.qi + 1) + '"> / ' + n + ' 题　<span class="kbdhint">' +
       (q.type === "choice" ? "1-4 选答案" : "空格看答案") + "</span>" +
+      '<button class="focusbtn' + (document.body.classList.contains("focus") ? " on" : "") + '" data-act="focus">◱ 专注</button>' +
       '<button class="cardbtn' + (ST.cardOpen ? " on" : "") + '" data-act="card">▤ 答题卡</button></div>';
 if (ST.cardOpen) {
       var cOk = 0, cFu = 0, cNo = 0, cNew = 0, grid = "";
@@ -1784,6 +1827,30 @@ if (ST.cardOpen) {
         '<div class="sb"><b>' + done + "/" + probs.length + '</b><span>已自评</span></div>' +
         '<div class="sb"><b>' + rate + '%</b><span>会做率</span></div>' +
         '<div class="sb"><b>' + (cnt.fuzzy + cnt.no) + '</b><span>待补</span></div></div>';
+      /* 得分与考点短板：让模考有结果沉淀 */
+      var full = 0, got = 0, weakK = {};
+      probs.forEach(function (p) {
+        var sc = typeof p.points === "number" ? p.points : (A.num(p.points, 0) || 0);
+        if (!sc) sc = 10;
+        var g = A.examGrade(p.id);
+        if (!g) return;
+        full += sc;
+        if (g === "ok") got += sc; else if (g === "fuzzy") got += sc / 2;
+        if (g !== "ok") {
+          (p.kp || []).forEach(function (k) {
+            var nm = (A.KPMAP[k] || {}).name || k;
+            weakK[nm] = (weakK[nm] || 0) + 1;
+          });
+        }
+      });
+      h += '<div class="rvScore"><b>' + (Math.round(got * 10) / 10) + "</b> / " + full + " 分" +
+        '<span class="tiny muted">（会＝满分，不熟＝半分，只统计已自评的题）</span></div>';
+      var wkArr = Object.keys(weakK).sort(function (a, b) { return weakK[b] - weakK[a]; }).slice(0, 5);
+      if (wkArr.length) {
+        h += '<div class="rvweak"><span class="tiny muted">本卷短板考点：</span>' +
+          wkArr.map(function (n) { return '<span class="tag slow">' + esc(n) + " ×" + weakK[n] + "</span>"; }).join("") +
+          "</div>";
+      }
       if (done < probs.length) {
         h += '<div class="tiny muted" style="margin-top:6px">还有 ' + (probs.length - done) + " 道没自评，下面逐题点一下就能补上，统计会实时更新。</div>";
       }
@@ -2179,6 +2246,23 @@ if (ST.cardOpen) {
       "</div>";
     if (gq) return h + gsearchHTML(gq);
 
+    /* 今日待复习——按艾宾浩斯，先清复习，再开新题 */
+    var ed0 = A.examDueList().length;
+    if (due > 0 || ed0) {
+      h += '<div class="card duecard duefirst">';
+      if (due > 0) {
+        h += '<div class="duetop"><span class="duenum">' + due + '</span><span class="duetxt">道题今天该复习</span></div>';
+        h += '<button class="btn primary block" data-act="start-due">开始复习（' + due + ' 道）</button>';
+      }
+      if (ed0) {
+        h += (due > 0 ? '<div class="rowsplit"></div>' : "") +
+          '<div class="duetop"><span class="duenum">' + ed0 + '</span><span class="duetxt">道真题该重做</span></div>' +
+          '<button class="btn ' + (due > 0 ? "ghost" : "primary") + ' block" data-act="exam-due">去重做真题</button>';
+      }
+      h += '<div class="tiny muted">这些是按遗忘曲线算出来的到期题，先清完再开新题，记得最牢。</div>';
+      h += "</div>";
+    }
+
     /* 立即刷题 / 接着上次停的地方 */
     var lp = A.lastPos();
     h += '<div class="card resumecard">';
@@ -2186,12 +2270,12 @@ if (ST.cardOpen) {
       h += '<div class="restop"><span class="h4">继续上次</span>' +
         '<span class="tiny muted">' + esc(A.agoText(lp.at)) + "</span></div>";
       h += '<div class="tiny muted">' + esc(A.modeName(lp.flt)) + " · 停在 " + (lp.qi + 1) + " / " + lp.total + " 题</div>";
-      h += '<button class="btn primary block" data-act="resume">接着刷 · 第 ' + (lp.qi + 1) + " 题</button>";
+      h += '<button class="btn ' + (due > 0 ? "ghost" : "primary") + ' block" data-act="resume">接着刷 · 第 ' + (lp.qi + 1) + " 题</button>";
       h += '<div class="row"><button class="btn ghost sm" data-act="resume-new">换一组新的</button></div>';
     } else {
       h += '<div class="h4">立即刷题</div>';
       h += '<div class="tiny muted">从混合题库开始；答「不熟」或「不会」的自动进重测。</div>';
-      h += '<button class="btn primary block" data-act="resume">开始刷题</button>';
+      h += '<button class="btn ' + (due > 0 ? "ghost" : "primary") + ' block" data-act="resume">开始刷题</button>';
     }
     h += "</div>";
 
@@ -2208,6 +2292,10 @@ if (ST.cardOpen) {
     h += '<div class="goalline">' +
       '<div class="goalcap"><span>今日目标</span><b>' + todayCount + " / " + goal + "</b><i>" + gpct + "%</i></div>" +
       '<div class="pbar"><i style="width:' + gpct + '%"></i></div></div>';
+    if (due > 0) {
+      h += '<div class="plantip">今天建议：先复习 <b>' + due + "</b> 道到期题，再刷 <b>" +
+        Math.max(0, goal - due) + "</b> 道新题（目标 " + goal + " 道按" + (due > goal ? "复习优先" : "复习＋新题") + "分配）。</div>";
+    }
 
     /* 加到桌面（PWA）引导：独立窗口里就不显示了 */
     var standalone = false;
@@ -2226,30 +2314,14 @@ if (ST.cardOpen) {
         "</div>";
     }
 
-    /* 待复习优先条：符合艾宾浩斯，先把到期的清掉 */
-    if (due > 0) {
-      h += '<div class="card duecard">';
-      h += '<div class="duetop"><span class="duenum">' + due + '</span><span class="duetxt">道题今天该复习</span></div>';
-      h += '<div class="tiny muted">按遗忘曲线排的，先清复习再开新题，记得牢。</div>';
-      h += '<button class="btn primary block" data-act="start-due">开始复习</button>';
-      h += "</div>";
-    } else {
-      h += '<div class="card donecard">';
-      h += '<div class="donetop">✓ 今天的复习清空了</div>';
-      h += '<div class="tiny muted">可以开新题，或者把重测里的硬骨头啃一啃。</div>';
-      h += '<div class="row"><button class="btn primary" data-act="start-new">做新题</button>' +
-        '<button class="btn ghost" data-act="start-wrong">重测</button></div>';
-      h += "</div>";
-    }
-
-    /* 真题到期复习：标过「不会/不熟」的真题按遗忘曲线排到期 */
-    var ed = A.examDueList().length;
-    if (ed) {
-      h += '<div class="card duecard">';
-      h += '<div class="duetop"><span class="duenum">' + ed + '</span><span class="duetxt">道真题该重做了</span></div>';
-      h += '<div class="tiny muted">上次标了「不会 / 不熟」的真题到复习日了，重看一遍原卷比刷新题划算。</div>';
-      h += '<button class="btn primary block" data-act="exam-due">去重做</button>';
-      h += "</div>";
+    /* 复习清空后的轻提示（到期条目已在页面顶部） */
+    if (due === 0 && ed0 === 0) {
+      h += '<div class="card donecard">' +
+        '<div class="donetop">✓ 今天的复习清空了</div>' +
+        '<div class="tiny muted">可以开新题，或者把重测里的硬骨头啃一啃。</div>' +
+        '<div class="row"><button class="btn primary" data-act="start-new">做新题</button>' +
+        '<button class="btn ghost" data-act="start-wrong">重测</button></div>' +
+        "</div>";
     }
 
     /* 该补的考点：只挑最弱的一两个，给一条明确指令 */
@@ -2395,6 +2467,8 @@ if (ST.cardOpen) {
   function kpListHTML(subj) {
     var q = (A.ST.nq || "").trim().toLowerCase();
     var h = "";
+    var kst = {};
+    (A.kpStats() || []).forEach(function (s) { kst[s.k] = s; });
     chaptersOf(subj).forEach(function (ch) {
       var pts = ch.points.filter(function (p) {
         if (!q) return true;
@@ -2406,11 +2480,15 @@ if (ST.cardOpen) {
         '<span class="tiny muted">' + esc(ch._subj) + " · " + pts.length + " 个考点</span></div>";
       pts.forEach(function (p) {
         var fq10 = A.FREQ10[p.id] || 0, fq = A.FREQ[p.id] || 0, n = A.kpCount(p.id);
-        var r = A.DB.q["__kp__" + p.id];
+        var st = kst[p.id] || { n: 0, ok: 0, rate: -1 };
+        var lv = st.n === 0 ? 0 : (st.rate < 0.6 ? 1 : (st.rate < 0.85 ? 2 : 3));
+        var lvTxt = ["未练", "薄弱", "一般", "熟练"][lv];
+        var rateTxt = st.n ? Math.round(st.rate * 100) + "%" : "—";
         h += '<details class="kp" data-kp="' + esc(p.id) + '">';
         h += '<summary><span class="kpname">' + esc(p.name) + "</span>" +
           '<span class="kpm">' + (fq10 ? '<i class="hot">近十年 ' + fq10 + " 次</i>" : "") +
-          '<i class="cnt">练习 ' + n + "</i></span></summary>";
+          '<i class="kps hm' + lv + '">' + lvTxt + " " + rateTxt + "</i>" +
+          '<i class="cnt">' + n + " 题 · 练 " + st.n + " 次</i></span></summary>";
         h += '<div class="body">';
         h += '<div class="kptip">' + (fq ? "真题里出现过 " + fq + " 次" : "真题里没单独考过，但属于基础") +
           (p.keys && p.keys.length ? " · 关键词：" + esc(p.keys.join("、")) : "") + "</div>";
@@ -2618,6 +2696,8 @@ if (ST.cardOpen) {
         (x.w.kind === "fuzzy" ? "不熟" : x.w.kind === "star" ? "收藏" : "不会") + "</span>" +
         '<span class="tag ' + (q.subject === "信号" ? "sig" : "cir") + '">' + esc(q.subject) + "</span>" +
         (x.w.n ? '<span class="tiny muted">错 ' + x.w.n + " 次</span>" : "") +
+        (r.slow ? '<span class="tag slow">慢题 ×' + r.slow + "</span>" : "") +
+        (r.tn ? '<span class="tiny muted">均 ' + Math.round(r.ts / r.tn) + "s</span>" : "") +
         (r.due ? (r.due <= A.todayStr() ? '<span class="tag due">今天该复习</span>' : '<span class="tiny muted">下次 ' + r.due + "</span>") : "") + "</div>";
       h += '<div class="wstem" data-act="open-q" data-q="' + esc(x.id) + '">' + esc(A.lead(q.stem, 90)) + "</div>";
       if (x.w.kind !== "star") {
@@ -3421,6 +3501,11 @@ if (ST.cardOpen) {
 
   /* 答题卡开关 + 跳题 */
   on("card", function () { ST.cardOpen = !ST.cardOpen; render(); });
+  on("focus", function () {
+    var on = document.body.classList.toggle("focus");
+    try { localStorage.setItem("kaoyan829.focus", on ? "1" : ""); } catch (e) { }
+    render();
+  });
   on("goto", function (el) {
     var i = parseInt(el.getAttribute("data-v"), 10);
     if (isNaN(i) || i < 0 || i >= ST.list.length) return;
@@ -3463,6 +3548,7 @@ if (ST.cardOpen) {
 
   function grade(q, g) {
     if (!q) return;
+    if (ST.qid === q.id && ST.qT0 && A.logTime) A.logTime(q.id, Math.round((Date.now() - ST.qT0) / 1000));
     A.record(q.id, g);
     var msg = g === "ok" ? "记下了：会 · 下次 " + (A.DB.q[q.id] && A.DB.q[q.id].due) : "已进重测队列";
     A.toast(msg, g === "ok" ? "ok" : "warn");
@@ -3991,6 +4077,7 @@ if (ST.cardOpen) {
     var th = "light";
     try { th = localStorage.getItem("kaoyan829_theme") || "light"; } catch (e) { }
     A.applyTheme(th);
+    try { if (localStorage.getItem("kaoyan829.focus")) document.body.classList.add("focus"); } catch (e) { }
     render();
     setInterval(function () { A.tick();  }, 1000);
     /* 空闲时把讲义正文悄悄拉下来：首屏不背这个包，但断网时讲义也能看 */
