@@ -1096,9 +1096,9 @@
         st.n += r.n; st.ok += r.ok;
       });
     });
-    return Object.keys(kpStat).filter(function (k) { return kpStat[k].n >= (minN || 2); })
+    return Object.keys(kpStat).filter(function (k) { return kpStat[k].n >= (minN || 1); })
       .map(function (k) { return { k: k, rate: kpStat[k].ok / kpStat[k].n, n: kpStat[k].n }; })
-      .filter(function (x) { return x.rate < 0.7; })
+      .filter(function (x) { return x.rate < 0.6; })
       .sort(function (a, b) { return a.rate - b.rate; })
       .slice(0, limit || 8);
   };
@@ -1165,8 +1165,31 @@
     if (secs >= 120) { r.slow = (r.slow || 0) + 1; if (!r.due) r.due = A.addDays(A.todayStr(), 1); }
   };
   A.logTime = A.logTime;
+
+  /* 选择题已自动归档后，只调整「错因细分」不再重复计数 */
+  function rekind(qid, g) {
+    if (!qid || !QMAP[qid]) return;
+    var r = DB.q[qid]; if (!r) return;
+    r.g = g;
+    if (g !== "ok") {
+      r.due = addDays(g === "fuzzy" ? 2 : 1);
+      var w = DB.wrong[qid] || { at: todayStr(), n: 1 };
+      w.kind = (g === "fuzzy") ? "fuzzy" : "no";
+      DB.wrong[qid] = w;
+    }
+    save();
+  }
+  /* 题干里的 i_{R2} / u_C(0_+) 这类裸下标：包成 $...$ 交给公式渲染 */
+  function mathSub(s) {
+    if (!s) return s;
+    return String(s).replace(/([A-Za-zΑ-ω][A-Za-z0-9]*)([_^])\{([^{}]{1,12})\}/g, function (m, b, c, x) {
+      return "$" + b + c + "{" + x + "}$";
+    }).replace(/([A-Za-zΑ-ω])([_^])(?![{A-Za-z0-9])([A-Za-z0-9]{1,3})(?![A-Za-z0-9])/g, function (m, b, c, x) {
+      return "$" + b + c + "{" + x + "}$";
+    });
+  }
   A.avgTime = function (id) { var r = A.DB.q[id]; return (r && r.tn) ? Math.round(r.ts / r.tn) : 0; };
-  A.record = record; A.recordExam = recordExam; A.examDone = examDone; A.examIsDue = examIsDue; A.examDueList = examDueList; A.noteGet = noteGet; A.noteSet = noteSet; A.noteCount = noteCount;
+  A.record = record; A.rekind = rekind; A.mathSub = mathSub; A.recordExam = recordExam; A.examDone = examDone; A.examIsDue = examIsDue; A.examDueList = examDueList; A.noteGet = noteGet; A.noteSet = noteSet; A.noteCount = noteCount;
 
   /* 错因标签：同一个错题只挂一个标签，再点一次取消 */
   function setWhy(qid, why) {
@@ -1511,13 +1534,14 @@
       h += '<div class="row" style="margin:2px 0 10px"><button class="btn ghost sm" data-act="figdrill">⚡ 去「读图专项」练带图的电路题</button></div>';
     })();
 
+    var Gx = (mark && q && q.__picked != null) ? G3.filter(function (x) { return x.g !== "ok"; }) : G3;
     h += '<div class="grade3">';
-    G3.forEach(function (x) {
+    Gx.forEach(function (x) {
       h += '<button class="gbtn ' + x.cls + '" data-act="grade" data-g="' + x.g + '" title="' + esc(x.tip) + '">' +
         '<span class="gs">' + x.s + '</span><span class="gt">' + x.t + "</span></button>";
     });
     h += "</div>";
-    h += '<div class="tiny gradehint">正确 → 直接过；不熟悉 / 不会 → 收进「重测」，之后单独刷</div>';
+    h += '<div class="tiny gradehint">' + (mark && q && q.__picked != null ? '已自动归档；要细分就点「不熟悉 / 不会」' : '正确 → 直接过；不熟悉 / 不会 → 收进「重测」，之后单独刷') + '</div>';
     h += "</div>";
     return h;
   }
@@ -1549,7 +1573,7 @@
       (A.isStar(q.id) ? "★" : "☆") + "</button>";
     h += "</div>";
 
-    h += '<div class="stem">' + md(q.stem) + "</div>";
+    h += '<div class="stem">' + md(A.mathSub(q.stem)) + "</div>";
     if (A.qfig) { var fg = A.qfig(q.id); if (fg) h += '<div class="qfig">' + fg + '<div class="figcap">示意图由题干参数生成 · 仅供参考</div></div>'; }
     if (q.fig && q.fig.length) h += figHTML(q.fig, "题图");
     h += '<div class="qbody" id="qbody"></div>';
@@ -1610,6 +1634,10 @@
         '<span class="muted">已揭晓</span>';
     mark += '　正确答案 <b>' + "ABCDEF"[q.answer == null ? 0 : q.answer] + "</b>";
     var af = $("#qafter");
+    if (right !== null && A.record) {
+      A.record(q.id, right ? "ok" : "no");
+      A.toast(right ? "答对：已归档，下次 " + ((A.DB.q[q.id] || {}).due || "") : "答错：已进重测", right ? "ok" : "warn");
+    }
     if (af) af.innerHTML = feedbackHTML(q, mark);
     A.$("#qbody").classList.add("done");
   }
@@ -2716,7 +2744,7 @@ if (ST.cardOpen) {
         '<span class="tag ' + (q.subject === "信号" ? "sig" : "cir") + '">' + esc(q.subject) + "</span>" +
         (x.w.n ? '<span class="tiny muted">错 ' + x.w.n + " 次</span>" : "") +
         (r.slow ? '<span class="tag slow">慢题 ×' + r.slow + "</span>" : "") +
-        (r.tn ? '<span class="tiny muted">均 ' + Math.round(r.ts / r.tn) + "s</span>" : "") +
+        "" +
         (r.due ? (r.due <= A.todayStr() ? '<span class="tag due">今天该复习</span>' : '<span class="tiny muted">下次 ' + r.due + "</span>") : "") + "</div>";
       h += '<div class="wstem" data-act="open-q" data-q="' + esc(x.id) + '">' + esc(A.lead(q.stem, 90)) + "</div>";
       if (x.w.kind !== "star") {
@@ -2834,6 +2862,7 @@ if (ST.cardOpen) {
     var wk = A.weakKps ? A.weakKps() : [];
     if (wk.length) {
       h += '<div class="wrow"><span class="wk">最薄弱</span><span class="weakchips">';
+    h += '<div class="tiny muted" style="margin:2px 2px 10px">判定规则：练过至少 1 次、正确率低于 60% 就算薄弱（不再要求练过 2 次）</div>';
       wk.slice(0, 3).forEach(function (x) {
         var nm = (A.KPMAP[x.k] || {}).name || x.k;
         h += '<button class="chip tiny" data-act="drill-kp" data-v="' + esc(x.k) + '">' + esc(nm) + " " + Math.round(x.rate * 100) + "%</button>";
@@ -3578,7 +3607,7 @@ if (ST.cardOpen) {
   function grade(q, g) {
     if (!q) return;
     if (ST.qid === q.id && ST.qT0 && A.logTime) A.logTime(q.id, Math.round((Date.now() - ST.qT0) / 1000));
-    A.record(q.id, g);
+    if (q.__picked != null && A.rekind) A.rekind(q.id, g); else A.record(q.id, g);
     var msg = g === "ok" ? "记下了：会 · 下次 " + (A.DB.q[q.id] && A.DB.q[q.id].due) : "已进重测队列";
     A.toast(msg, g === "ok" ? "ok" : "warn");
     var btns = $$(".grade3 .gbtn");

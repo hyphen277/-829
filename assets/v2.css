@@ -547,9 +547,10 @@ mark.hl{background:color-mix(in srgb,var(--warn) 32%,transparent);color:inherit;
 .paperhead .tiny{margin-left:auto}
 .paperwrap{background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:6px;margin-bottom:10px}
 .paperwrap img{width:100%;height:auto;display:block;border-radius:6px;cursor:zoom-in}
-.paperbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 12px;position:sticky;bottom:8px;background:rgba(244,247,250,.92);backdrop-filter:blur(4px);border-radius:10px;padding:6px 8px}
+.paperbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 12px;position:sticky;bottom:78px;z-index:9;background:rgba(244,247,250,.92);backdrop-filter:blur(4px);border-radius:10px;padding:6px 8px}
 .paperno{font-size:12px;color:#5b6b7b}
 .paperbtn{margin-top:8px}
+.paperwrap{margin-bottom:88px}
 .btn.dis{opacity:.4;pointer-events:none}
 .ptimerbar{display:flex;align-items:center;gap:8px;margin:0 2px 8px}
 .ptimer{font-variant-numeric:tabular-nums;font-weight:700;font-size:19px;color:#1f4e79;letter-spacing:.5px}
