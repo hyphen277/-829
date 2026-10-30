@@ -591,3 +591,10 @@ mark.findhl{background:color-mix(in srgb,var(--accent) 30%,transparent);color:in
 body.dark .qfig{background:#fff}
 
 .goalline{padding:2px 2px 6px}
+
+/* 今日目标：文字在条外，条本身纯色填充，避免 8px 条里塞字被裁切 */
+.goalline{margin:4px 2px 12px}
+.goalcap{display:flex;align-items:baseline;gap:8px;font-size:12px;color:var(--muted);margin-bottom:6px}
+.goalcap b{font-size:13px;color:var(--ink)}
+.goalcap i{margin-left:auto;font-style:normal;font-weight:700;color:var(--brand)}
+.goalline .pbar{margin:0;height:10px}

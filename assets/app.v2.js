@@ -2052,9 +2052,10 @@ if (ST.cardOpen) {
     var c = A.cfg(), dl = A.daysLeft(), goal = c.goal || 30;
     var gpct = Math.min(100, Math.round((L.n || 0) / goal * 100));
     /* 今日目标（不再用方框卡片，只留一行进度；倒计时已按用户要求删掉） */
+    var todayCount = L.n || 0;
     h += '<div class="goalline">' +
-      '<span class="tiny muted">今日目标 ' + (L.n || 0) + " / " + goal + '</span>' +
-      '<div class="pbar thin" style="margin-top:6px"><i style="width:' + gpct + '%"></i><span>今日目标 ' + gpct + "%</span></div></div>";
+      '<div class="goalcap"><span>今日目标</span><b>' + todayCount + " / " + goal + "</b><i>" + gpct + "%</i></div>" +
+      '<div class="pbar"><i style="width:' + gpct + '%"></i></div></div>';
     void dl;
 
     /* 加到桌面（PWA）引导：独立窗口里就不显示了 */
