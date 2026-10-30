@@ -736,10 +736,20 @@
   });
   EPROB.forEach(function (p) { p._school = "shu"; p._imgdir = "zt"; });
 
+  /* 西电 821：真题与答案是两份 PDF，分别出图 */
+  var XDU = window.EXAMS_XDU || { problems: [] };
+  var XDUPROB = (XDU.problems || []).slice();
+  XDUPROB.forEach(function (p, i) {
+    p._i = i; p._school = "xdu"; p._imgdir = "xd/q"; p._ansdir = "xd/a";
+    p.id = p.id || ("X" + (p.year || "") + "-" + (p.no || i));
+  });
+
   var SCHOOLS = [
     { id: "shu", name: "上海大学 829", short: "上大 829", imgdir: "zt", list: EPROB, ready: EPROB.length > 0 },
     { id: "guet", name: "桂林电子科技大学 806", short: "桂电 806", imgdir: "gt", list: GUETPROB,
-      ready: GUETPROB.length > 0, papers: GUET.papers || null }
+      ready: GUETPROB.length > 0, papers: GUET.papers || null },
+    { id: "xdu", name: "西安电子科技大学 821", short: "西电 821", imgdir: "xd/q", list: XDUPROB,
+      ready: XDUPROB.length > 0, papers: XDU.papers || null, anspapers: XDU.anspapers || null }
   ];
   function schoolOf(id) {
     for (var i = 0; i < SCHOOLS.length; i++) if (SCHOOLS[i].id === id) return SCHOOLS[i];
@@ -2065,9 +2075,10 @@ if (ST.cardOpen) {
         return '<button class="fblink" data-act="gotolesson" data-v="' + esc(lid) + '">看考点讲义 ›</button>';
       })() + "</div>";
     h += figHTML(pagesOf(p), p.year + " 年原卷");
-    if (p.ans) h += '<details class="ansbox"><summary>看参考答案（原卷第 ' + p.ans + " 页起）</summary>" +
-      figHTML([A.pageImg("gt", p.ans)], p.year + " 年参考答案") +
-      '<div class="tiny muted">参考答案在原卷后面的解析部分，页内可放大细看。</div></details>';
+    var ansp = (sch.anspapers && sch.anspapers[String(p.year)]) || (p.ans ? [p.ans] : []);
+    if (ansp.length) h += '<details class="ansbox"><summary>看参考答案（答案册第 ' + ansp[0] + " 页起）</summary>" +
+      figHTML(ansp.slice(0, 2).map(function (n) { return A.pageImg(p._ansdir || p._imgdir || "gt", n); }), p.year + " 年参考答案") +
+      '<div class="tiny muted">西电的答案单独成册，这里给的是本年答案页，可放大细看。</div></details>';
     h += '<div class="tiny muted">上面是当年原卷扫描页（题干、电路图、数据都在里面）。做完自己判：</div>';
     (function () {
       var r = A.DB.exam && A.DB.exam[p.id];
