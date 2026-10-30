@@ -267,7 +267,7 @@
   };
 })(window.A = window.A || {});
 
-﻿/* ==========================================================================
+/* ==========================================================================
    829 训练台 v2 · p1 核心：工具 / 存储 / 数据索引 / 学习模型
    ========================================================================== */
 (function (A) {
@@ -1179,14 +1179,29 @@
     }
     save();
   }
-  /* 题干里的 i_{R2} / u_C(0_+) 这类裸下标：包成 $...$ 交给公式渲染 */
+  /* 题干里的 i_{R2} / u_C(0_+) 这类裸下标：包成 $...$ 交给公式渲染。
+     必须在已有的 $...$ / $$...$$ 之外操作，否则会把 \int_{-\infty} 里的
+     「int_」当成变量包一层 $，产生嵌套定界符 → KaTeX 收不到 → 原文外露。 */
   function mathSub(s) {
     if (!s) return s;
-    return String(s).replace(/([A-Za-zΑ-ω][A-Za-z0-9]*)([_^])\{([^{}]{1,12})\}/g, function (m, b, c, x) {
-      return "$" + b + c + "{" + x + "}$";
-    }).replace(/([A-Za-zΑ-ω])([_^])(?![{A-Za-z0-9])([A-Za-z0-9]{1,3})(?![A-Za-z0-9])/g, function (m, b, c, x) {
-      return "$" + b + c + "{" + x + "}$";
-    });
+    var src = String(s), re = /\$\$[\s\S]*?\$\$|\$[^$\n]*?\$/g, out = [], last = 0, m;
+    function fix(txt) {
+      if (!txt) return txt;
+      return txt
+        .replace(/(^|[^A-Za-z\\$])([A-Za-z]{1,2})([_^])\{([^{}]{1,14})\}/g, function (mm, p, b, c, x) {
+          return p + "$" + b + c + "{" + x + "}$";
+        })
+        .replace(/(^|[^A-Za-z\\$])([A-Za-z]{1,2})([_^])([A-Za-z0-9]{1,2})(?![A-Za-z0-9{])/g, function (mm, p, b, c, x) {
+          return p + "$" + b + c + "{" + x + "}$";
+        });
+    }
+    while ((m = re.exec(src))) {
+      out.push(fix(src.slice(last, m.index)));
+      out.push(m[0]);
+      last = m.index + m[0].length;
+    }
+    out.push(fix(src.slice(last)));
+    return out.join("");
   }
   A.avgTime = function (id) { var r = A.DB.q[id]; return (r && r.tn) ? Math.round(r.ts / r.tn) : 0; };
   A.record = record; A.rekind = rekind; A.mathSub = mathSub; A.recordExam = recordExam; A.examDone = examDone; A.examIsDue = examIsDue; A.examDueList = examDueList; A.noteGet = noteGet; A.noteSet = noteSet; A.noteCount = noteCount;
