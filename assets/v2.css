@@ -654,3 +654,9 @@ body.focus{padding-top:6px}
 .tag.slow{background:#fff1e6;color:#b4632a;border-color:#f0cfb4}
 .rvScore{margin:8px 0 4px;font-size:13px;color:var(--muted)}.rvScore b{font-size:20px;color:var(--ink);margin-right:2px}
 .rvweak{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:2px 0 6px}
+.trapbox{margin:8px 0 6px;padding:8px 10px;border:1px solid #f0dfc8;background:#fffaf2;border-radius:9px}
+.trapbox.vary{border-color:#dbe6f1;background:#f6faff}
+.traphead{font-size:12px;font-weight:700;color:#b4632a;margin-bottom:4px}
+.trapbox.vary .traphead{color:#2c5f8a}
+.traplist{margin:0;padding-left:16px;font-size:12.5px;line-height:1.6;color:var(--ink2)}
+.traplist li{margin:3px 0}

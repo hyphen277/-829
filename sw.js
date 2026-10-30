@@ -1,6 +1,6 @@
 /* 829 训练台 service worker：离线打开 + 秒开。
    策略：页面与代码网络优先（保证更新），图片字体缓存优先（省流量、快）。 */
-const V = "339cd84b29";
+const V = "a1ab73bdc0";
 const CORE = [
   "./index.html",
   "./manifest.webmanifest",
@@ -10,6 +10,7 @@ const CORE = [
   "./assets/katex/katex.min.js",
   "./data/kp_signal.js",
   "./data/kp_circuit.js",
+  "./data/kp_trap.js",
   "./data/q_signal.js",
   "./data/q_signal2.js",
   "./data/q_signal3.js",

@@ -1470,6 +1470,14 @@
       var tk2 = (q.kp || [])[0], t2 = tk2 && window.KP_TALK && window.KP_TALK[tk2];
       if (t2 && t2[1]) h += '<div class="fb-pit"><b>易错点</b>' + md(t2[1]) + "</div>";
     }
+    (function () {
+      var k0 = null, tp = null;
+      (q.kp || []).some(function (k) { if (window.KPTRAP && window.KPTRAP[k]) { k0 = k; tp = window.KPTRAP[k]; return true; } return false; });
+      if (!tp || !tp.t || !tp.t.length) return;
+      h += '<div class="trapbox"><div class="traphead">这考点常踩的坑</div><ul class="traplist">' +
+        tp.t.slice(0, 3).map(function (x) { return "<li>" + x + "</li>"; }).join("") + "</ul>" +
+        '<button class="link" data-act="kptrap" data-v="' + esc(k0) + '">看全部陷阱和变式 ›</button></div>';
+    })();
     if (q.type !== "choice" && q.answerText) {
       h += '<div class="fb-sec"><div class="fb-h"><i>🎯</i>标准答案</div><div class="fb-body">' + md(q.answerText) + "</div></div>";
     }
@@ -2492,6 +2500,17 @@ if (ST.cardOpen) {
         h += '<div class="body">';
         h += '<div class="kptip">' + (fq ? "真题里出现过 " + fq + " 次" : "真题里没单独考过，但属于基础") +
           (p.keys && p.keys.length ? " · 关键词：" + esc(p.keys.join("、")) : "") + "</div>";
+        var tp = (window.KPTRAP || {})[p.id];
+        if (tp) {
+          if (tp.t && tp.t.length) {
+            h += '<div class="trapbox"><div class="traphead">常见陷阱</div><ul class="traplist">' +
+              tp.t.map(function (x) { return "<li>" + x + "</li>"; }).join("") + "</ul></div>";
+          }
+          if (tp.v && tp.v.length) {
+            h += '<div class="trapbox vary"><div class="traphead">常见变式</div><ul class="traplist">' +
+              tp.v.map(function (x) { return "<li>" + x + "</li>"; }).join("") + "</ul></div>";
+          }
+        }
         if (p.formulas && p.formulas.length) {
           h += '<div class="kpf">';
           p.formulas.forEach(function (f) {
@@ -3501,6 +3520,16 @@ if (ST.cardOpen) {
 
   /* 答题卡开关 + 跳题 */
   on("card", function () { ST.cardOpen = !ST.cardOpen; render(); });
+  on("kptrap", function (el) {
+    var id = el.getAttribute("data-v");
+    ST.tab = "notes"; ST.noteTab = "kp"; ST.nq = "";
+    SUB.lesson = null; SUB.formula = 0; SUB.examone = -1;
+    render();
+    setTimeout(function () {
+      var d = document.querySelector('.kp[data-kp="' + id + '"]');
+      if (d) { d.open = true; d.scrollIntoView({ block: "center" }); }
+    }, 150);
+  });
   on("focus", function () {
     var on = document.body.classList.toggle("focus");
     try { localStorage.setItem("kaoyan829.focus", on ? "1" : ""); } catch (e) { }
