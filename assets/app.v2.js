@@ -239,10 +239,13 @@
 
   function svg(o) {
     var pad = 8;
-    return '<svg class="cfig" viewBox="0 0 ' + (o.w + pad * 2) + " " + (o.h + pad * 2) + '" ' +
-      'style="display:block;width:100%;max-width:' + (o.w + pad * 2) + 'px;height:auto" role="img">' +
+    var W2 = o.w + pad * 2, H2 = o.h + pad * 2;
+    return '<svg class="cfig" viewBox="0 0 ' + W2 + " " + H2 + '" ' +
+      'style="display:block;width:100%;max-width:' + W2 + 'px;height:auto" role="img">' +
       '<g stroke="' + C + '" stroke-width="1.7" stroke-linecap="round" fill="none" transform="translate(' + pad + "," + pad + ')">' +
-      o.body + "</g></svg>";
+      o.body + "</g>" +
+      '<text x="' + (W2 - pad) + '" y="' + (H2 - 3) + '" font-size="9.5" fill="#a7b1bd" text-anchor="end">仅供参考</text>' +
+      "</svg>";
   }
 
   A.cfig = function (kind, a) {
@@ -1449,7 +1452,7 @@
     h += "</div>";
 
     h += '<div class="stem">' + md(q.stem) + "</div>";
-    if (A.qfig) { var fg = A.qfig(q.id); if (fg) h += '<div class="qfig">' + fg + "</div>"; }
+    if (A.qfig) { var fg = A.qfig(q.id); if (fg) h += '<div class="qfig">' + fg + '<div class="figcap">示意图由题干参数生成 · 仅供参考</div></div>'; }
     if (q.fig && q.fig.length) h += figHTML(q.fig, "题图");
     h += '<div class="qbody" id="qbody"></div>';
     h += '<div id="qafter"></div>';
@@ -1906,22 +1909,78 @@ if (ST.cardOpen) {
   }
   A.vExamOne = vExamOne;
 
-  /* ---------- 读图专项：只看带原卷图的电路真题 ---------- */
+  /* ---------- 读图专项：先选题，再一题一屏 ---------- */
+  function figPick() {
+    var st = A.ST.figSetup || {};
+    return (A.figList() || []).filter(function (x) {
+      if (st.school && x.sch.short !== st.school) return false;
+      if (st.year && String(x.p.year) !== String(st.year)) return false;
+      return true;
+    });
+  }
+  A.figPick = figPick;
+
+  function figSetupHTML() {
+    var st = A.ST.figSetup || (A.ST.figSetup = { school: "", year: "", n: 10 });
+    var all = A.figList() || [];
+    var schools = [], years = [];
+    all.forEach(function (x) {
+      if (schools.indexOf(x.sch.short) < 0) schools.push(x.sch.short);
+      if (st.school && x.sch.short !== st.school) return;
+      var y = String(x.p.year);
+      if (years.indexOf(y) < 0) years.push(y);
+    });
+    years.sort(function (a, b) { return b - a; });
+    var picked = figPick();
+    var h = '<div class="row" style="margin-bottom:8px">' +
+      '<button class="btn ghost sm" data-act="figdrill-close">‹ 退出</button></div>';
+    h += '<div class="card">';
+    h += '<div class="h4">读图专项</div>';
+    h += '<div class="tiny muted" style="margin:4px 0 14px">只练带电路图的真题。选好范围后一道一道来：先看题干摘要和原卷页，自己判断「会 / 不熟 / 不会」，系统按遗忘曲线排下次复习。</div>';
+    h += '<div class="fslabel">院校</div><div class="chips">';
+    h += '<button class="chip' + (!st.school ? " on" : "") + '" data-act="figSchool" data-v="">全部</button>';
+    schools.forEach(function (s) {
+      h += '<button class="chip' + (st.school === s ? " on" : "") + '" data-act="figSchool" data-v="' + esc(s) + '">' + esc(s) + "</button>";
+    });
+    h += "</div>";
+    h += '<div class="fslabel">年份</div><div class="chips yearchips">';
+    h += '<button class="chip' + (!st.year ? " on" : "") + '" data-act="figYear" data-v="">全部</button>';
+    years.forEach(function (y) {
+      h += '<button class="chip' + (String(st.year) === y ? " on" : "") + '" data-act="figYear" data-v="' + y + '">' + y + "</button>";
+    });
+    h += "</div>";
+    h += '<div class="fslabel">这一轮做几道</div><div class="chips">';
+    [[10, "10 道"], [20, "20 道"], [0, "全部"]].forEach(function (p) {
+      h += '<button class="chip' + (A.num(st.n, 10) === p[0] ? " on" : "") + '" data-act="figN" data-v="' + p[0] + '">' + p[1] + "</button>";
+    });
+    h += "</div>";
+    h += '<div class="figcnt tiny muted" style="margin:12px 0">符合条件 ' + picked.length + " 道" +
+      (A.num(st.n, 10) ? "，这一轮做前 " + Math.min(A.num(st.n, 10), picked.length) + " 道" : "") + "</div>";
+    h += '<button class="btn primary block" data-act="fig-start"' + (picked.length ? "" : " disabled") + ">开始读图</button>";
+    h += "</div>";
+    return h;
+  }
+
   function vFigDrill(idx) {
-    var list = A.figList();
-    if (!list.length) return '<div class="empty">还没有可用的电路真题。</div>';
-    var i = Math.max(0, Math.min(list.length - 1, A.num(idx, 0)));
-    var x = list[i], p = x.p, sch = x.sch;
-    var f = A.pageImg(sch.imgdir, p.page);
+    var run = A.ST.figRun;
+    var all = A.figList() || [];
+    if (!run || !run.ids || !run.ids.length) return figSetupHTML();
+    var map = {};
+    all.forEach(function (x) { map[x.p.id] = x; });
+    var n = run.ids.length;
+    var i = Math.max(0, Math.min(n - 1, A.num(idx, 0)));
+    var x = map[run.ids[i]];
+    if (!x) return figSetupHTML();
+    var p = x.p, sch = x.sch;
     var h = '<div class="row" style="margin-bottom:10px;gap:8px">' +
-      '<button class="btn ghost sm" data-act="figdrill-close">‹ 退出</button>' +
-      '<span class="tiny muted figprog" style="margin-left:auto">读图专项 · 第 ' + (i + 1) + " / " + list.length + " 题</span></div>";
+      '<button class="btn ghost sm" data-act="figback">‹ 重选</button>' +
+      '<button class="btn ghost sm" data-act="figdrill-close">退出</button>' +
+      '<span class="tiny muted figprog" style="margin-left:auto">第 ' + (i + 1) + " / " + n + " 题</span></div>";
     h += '<div class="card">';
     h += '<div class="qtop"><span class="tag y">' + esc(sch.short) + " · " + esc(String(p.year)) + " 年 " + esc(p.no || "") + "</span>" +
       '<span class="tag cir">' + esc(p.part || "电路") + "</span>" +
       (p.points ? '<span class="tag">' + p.points + " 分</span>" : "") + "</div>";
-    h += '<div class="tiny muted" style="margin:6px 0 8px">先看卷面自己列方程算一遍，再按会 / 不熟 / 不会自评——系统按遗忘曲线安排下次复习。</div>';
-    h += figHTML([f], "原卷 · 第 " + p.page + " 页");
+    if (p.brief) h += '<div class="figbrief">' + esc(A.lead(A.plain(p.brief), 180)) + "</div>";
     (function () {
       var r = A.DB.exam && A.DB.exam[p.id];
       if (!r || !r.n) return;
@@ -1929,7 +1988,11 @@ if (ST.cardOpen) {
       h += '<div class="tiny muted exrev">已自评 ' + r.n + " 次 · 上次「" + gname + "」" +
         (r.due ? " · 下次复习 " + String(r.due).slice(5) : "") + "</div>";
     })();
-    h += '<div class="grade3">';
+    /* 原卷图默认折叠，不糊一脸 */
+    h += '<button class="btn ghost block figopen" data-act="fig-img">' +
+      (A.ST.figImg ? "收起原卷页" : "看原卷页（第 " + p.page + " 页）") + "</button>";
+    if (A.ST.figImg) h += figHTML([A.pageImg(sch.imgdir, p.page)], "原卷 · 第 " + p.page + " 页");
+    h += '<div class="grade3" style="margin-top:12px">';
     G3.forEach(function (g) {
       h += '<button class="gbtn ' + g.cls + '" data-act="figgrade" data-g="' + g.g + '">' +
         '<span class="gs">' + g.s + '</span><span class="gt">' + g.t + "</span></button>";
@@ -1937,7 +2000,7 @@ if (ST.cardOpen) {
     h += "</div>";
     h += '<div class="row" style="margin-top:12px;gap:8px">' +
       (i > 0 ? '<button class="btn ghost sm" data-act="fig-go" data-v="' + (i - 1) + '">‹ 上一题</button>' : "") +
-      (i < list.length - 1 ? '<button class="btn ghost sm" data-act="fig-go" data-v="' + (i + 1) + '">下一题 ›</button>' : "") +
+      (i < n - 1 ? '<button class="btn ghost sm" data-act="fig-go" data-v="' + (i + 1) + '">下一题 ›</button>' : "") +
       "</div></div>";
     return h;
   }
@@ -2048,15 +2111,19 @@ if (ST.cardOpen) {
     }
     h += "</div>";
 
-    /* 倒计时 + 今日目标 */
+    /* 倒计时方框 + 今日目标 */
     var c = A.cfg(), dl = A.daysLeft(), goal = c.goal || 30;
     var gpct = Math.min(100, Math.round((L.n || 0) / goal * 100));
-    /* 今日目标（不再用方框卡片，只留一行进度；倒计时已按用户要求删掉） */
     var todayCount = L.n || 0;
+    var left = dl > 0 ? dl : 0;
+    h += '<div class="card cdbox">' +
+      '<div class="cdnum"><b>' + left + '</b><span>天后上考场</span></div>' +
+      '<div class="cdsub">' + esc(c.examDate || "") + "</div>" +
+      '<div class="cdtip">按每天 ' + goal + " 题算，还能刷 " + (left * goal) + " 题</div>" +
+      "</div>";
     h += '<div class="goalline">' +
       '<div class="goalcap"><span>今日目标</span><b>' + todayCount + " / " + goal + "</b><i>" + gpct + "%</i></div>" +
       '<div class="pbar"><i style="width:' + gpct + '%"></i></div></div>';
-    void dl;
 
     /* 加到桌面（PWA）引导：独立窗口里就不显示了 */
     var standalone = false;
@@ -3349,29 +3416,59 @@ if (ST.cardOpen) {
   });
   setInterval(paintTimer, 1000);
 
-  /* 读图专项：所有带原卷图的电路真题 */
+  /* 读图专项：先选题，再一题一屏 */
   on("figdrill", function () {
     SUB.lesson = null; SUB.formula = 0; SUB.examone = -1; SUB.paper = null;
-    SUB.fig = Math.max(0, SUB.fig || 0);
+    SUB.fig = 0; A.ST.figRun = null; A.ST.figImg = false;
+    A.ST.figSetup = A.ST.figSetup || { school: "", year: "", n: 10 };
     render();
     window.scrollTo(0, 0);
   });
-  on("figdrill-close", function () { SUB.fig = -1; render(); window.scrollTo(0, 0); });
+  on("figdrill-close", function () { SUB.fig = -1; A.ST.figRun = null; A.ST.figImg = false; render(); window.scrollTo(0, 0); });
+  on("figback", function () { A.ST.figRun = null; A.ST.figImg = false; SUB.fig = 0; render(); window.scrollTo(0, 0); });
+  on("figSchool", function (el) {
+    var st = A.ST.figSetup || (A.ST.figSetup = {});
+    st.school = el.getAttribute("data-v") || "";
+    st.year = "";
+    render();
+  });
+  on("figYear", function (el) {
+    var st = A.ST.figSetup || (A.ST.figSetup = {});
+    st.year = el.getAttribute("data-v") || "";
+    render();
+  });
+  on("figN", function (el) {
+    var st = A.ST.figSetup || (A.ST.figSetup = {});
+    st.n = parseInt(el.getAttribute("data-v"), 10) || 0;
+    render();
+  });
+  on("fig-start", function () {
+    var st = A.ST.figSetup || {};
+    var list = A.figPick();
+    var n = A.num(st.n, 10) || list.length;
+    A.ST.figRun = { ids: list.slice(0, n).map(function (x) { return x.p.id; }) };
+    SUB.fig = 0; A.ST.figImg = false;
+    render();
+    window.scrollTo(0, 0);
+  });
+  on("fig-img", function () { A.ST.figImg = !A.ST.figImg; render(); });
   on("fig-go", function (el) {
     SUB.fig = Math.max(0, parseInt(el.getAttribute("data-v"), 10) || 0);
+    A.ST.figImg = false;
     render();
     window.scrollTo(0, 0);
   });
   on("figgrade", function (el) {
-    var list = A.figList();
-    var x = list[SUB.fig || 0];
-    if (!x) return;
+    var run = A.ST.figRun;
+    if (!run || !run.ids) return;
+    var id = run.ids[SUB.fig || 0];
+    if (!id) return;
     var g = el.getAttribute("data-g");
-    A.recordExam(x.p.id, g);
+    A.recordExam(id, g);
+    if (SUB.fig < run.ids.length - 1) SUB.fig++;
+    A.ST.figImg = false;
     render();
-    if (SUB.fig < list.length - 1) {
-      SUB.fig++; render(); window.scrollTo(0, 0);
-    }
+    window.scrollTo(0, 0);
   });
   on("exam-back", function () {
     var back = SUB.retLesson, bp = SUB.retPaper;
