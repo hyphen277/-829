@@ -760,6 +760,7 @@
   var EXMAP = {};
   SCHOOLS.forEach(function (s) {
     (s.list || []).forEach(function (p) { EXMAP[p.id] = { p: p, sch: s }; });
+  A.EXMAP = EXMAP;
   });
 
   /* 给 AI 读的题目上下文：题干、选项、答案、解析、考点，一次给全 */
@@ -1438,7 +1439,7 @@
     if (!c || c.length < 2 || c[1] - c[0] < 0.03)
       /* 没有裁图坐标（上大真题是完整文字录入）：别再把整页糊上去，折叠着放 */
       return '<details class="figdet"><summary>看原卷扫描页（第 ' + p.page + ' 页）›</summary>' +
-        figHTML([A.pageImg((EXMAP[p.id] || {}).sch ? EXMAP[p.id].sch.imgdir : "_", p.page)], alt) + "</details>";
+        figHTML([A.pageImg(((A.EXMAP || {})[p.id] || {}).sch ? A.EXMAP[p.id].sch.imgdir : "_", p.page)], alt) + "</details>";
     return '<div class="figwrap"><div class="figcrop" data-y0="' + c[0] + '" data-y1="' + c[1] + '">' +
       '<img src="' + esc(src) + '" alt="' + esc(alt || "原卷") + '" decoding="async"></div>' +
       '<div class="figcropbar"><span class="tiny muted">' + esc(alt || "原卷") + ' · 只截了这道题</span>' +
