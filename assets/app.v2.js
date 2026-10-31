@@ -3242,6 +3242,22 @@ if (ST.cardOpen) {
     return { id: "today", html: A.vToday() };
   }
 
+  /* 真题逐题：顺手把下一题的原卷页也拉下来，翻页时就不用等图 */
+  var preloaded = {};
+  function preloadNextExamPage() {
+    if (!A.shownExam || !A.pagesOf) return;
+    var v = currentView();
+    if (v.id !== "examone") return;
+    var i = (typeof A.SUB.examone === "number" ? A.SUB.examone : 0) + 1;
+    var list = A.shownExam() || [];
+    if (i >= list.length) return;
+    var src = (A.pagesOf(list[i]) || [])[0];
+    if (!src || preloaded[src]) return;
+    preloaded[src] = 1;
+    var im = new Image();
+    im.src = src;
+  }
+
   /* 真题原卷的「只截这道题」：按归一化 y 把长图裁成一段 */
   function applyCrops() {
     Array.prototype.forEach.call(document.querySelectorAll(".figcrop"), function (box) {
@@ -3273,6 +3289,7 @@ if (ST.cardOpen) {
     var y = window.scrollY;
     box.innerHTML = v.html;
     applyCrops();
+    preloadNextExamPage();
     if (v.id !== lastView) window.scrollTo(0, 0);
     else if (y < 200) window.scrollTo(0, 0);
     lastView = v.id;
