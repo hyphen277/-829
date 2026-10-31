@@ -4353,6 +4353,8 @@ if (ST.cardOpen) {
 
   /* ---------- 启动 ---------- */
   function boot() {
+    var bootEl = document.getElementById("boot");
+    if (bootEl) bootEl.parentNode.removeChild(bootEl);
     var th = "light";
     try { th = localStorage.getItem("kaoyan829_theme") || "light"; } catch (e) { }
     A.applyTheme(th);

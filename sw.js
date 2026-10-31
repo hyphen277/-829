@@ -1,6 +1,6 @@
 /* 829 训练台 service worker：离线打开 + 秒开。
    策略：页面与代码网络优先（保证更新），图片字体缓存优先（省流量、快）。 */
-const V = "e53d13d3e1";
+const V = "357671a87b";
 const CORE = [
   "./index.html",
   "./manifest.webmanifest",
@@ -32,12 +32,13 @@ const CORE = [
   "./data/formulas.js",
   "./assets/app.v2.js"
 ];
+const CORE_CORE = ["./index.html", "./assets/app.v2.js", "./assets/v2.css", "./assets/katex/katex.min.js"];
 const C = "829-" + V;
 
 self.addEventListener("install", function (e) {
   e.waitUntil(
     caches.open(C).then(function (c) {
-      return Promise.all(CORE.map(function (u) {
+      return Promise.all(CORE_CORE.map(function (u) {
         return fetch(new Request(u, { cache: "reload" })).then(function (r) {
           if (r && (r.ok || r.type === "opaque")) return c.put(u, r);
         }).catch(function () { });
