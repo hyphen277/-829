@@ -692,3 +692,14 @@ body.focus{padding-top:6px}
 .qchip{flex:0 0 auto;border:1px solid #d8e4f0;background:#fff;color:#33597c;font-size:12px;
   padding:5px 10px;border-radius:999px;cursor:pointer;white-space:nowrap}
 .qchip:active{background:#eef4fb}
+
+/* 真题逐题：只显示这道题那一段原卷 */
+.figwrap{margin:8px 0 2px}
+.figcrop{position:relative;overflow:hidden;background:#fff;border:1px solid #e3e8ee;border-radius:10px;
+  height:220px;transition:height .15s}
+.figcrop img{display:block;width:100%;height:auto;will-change:transform}
+.figcrop.full{height:auto!important;border-color:#cfe0f0}
+.figcrop.full img{transform:none!important}
+.figcropbar{display:flex;align-items:center;gap:8px;padding:4px 2px 0}
+.figcropbar .link{margin-left:auto}
+.startdrill{width:100%;justify-content:center;margin:2px 0 0}

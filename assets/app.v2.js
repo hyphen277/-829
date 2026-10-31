@@ -1368,7 +1368,7 @@
   };
 
 })(window.A = window.A || {});
-﻿/* ==========================================================================
+/* ==========================================================================
    829 训练台 v2 · p2 刷题引擎（三档自评 / 即时解析 / 真题原卷）
    ========================================================================== */
 (function (A) {
@@ -1429,6 +1429,19 @@
     return h + '</div>';
   }
   A.figHTML = figHTML;
+
+  /* 只显示这道题那一段：data/y 用 OCR 得到的归一化坐标；没有坐标就退回整页 */
+  function figCrop(p, alt) {
+    var src = pagesOf(p)[0];
+    if (!src) return "";
+    var c = (window.QCROP || {})[p.id];
+    if (!c || c.length < 2 || c[1] - c[0] < 0.03) return figHTML([src], alt);
+    return '<div class="figwrap"><div class="figcrop" data-y0="' + c[0] + '" data-y1="' + c[1] + '">' +
+      '<img src="' + esc(src) + '" alt="' + esc(alt || "原卷") + '" decoding="async"></div>' +
+      '<div class="figcropbar"><span class="tiny muted">' + esc(alt || "原卷") + ' · 只截了这道题</span>' +
+      '<button class="link" data-act="figfull">看整页 ›</button></div></div>';
+  }
+  A.figCrop = figCrop;
   function pagesOf(p) {
     /* 一道真题可能跨页：page 之后就近取，最多 2 页 */
     if (!p) return [];
@@ -1905,6 +1918,13 @@ if (ST.cardOpen) {
     return true;
   }
 
+  /* 当前筛选下的真题（逐题模式按这个顺序翻，不跨年份乱跳） */
+  function shownExam() {
+    var sch = A.schoolOf(ST.examSchool || "shu");
+    return (sch.list || []).filter(examMatch);
+  }
+  A.shownExam = shownExam;
+
   /* 院校选择条：先选学校，再选年份 */
   function schoolChips() {
     var cur = ST.examSchool || "shu";
@@ -2034,6 +2054,7 @@ if (ST.cardOpen) {
     var ys = Object.keys(years).map(Number).sort(function (a, b) { return b - a; });
 
     var nShown = all.filter(examMatch).length;
+    var shown = all.filter(examMatch);
     var doneAll = all.filter(function (p) { return A.examDone(p.id); }).length;
     h += '<h3>' + esc(sch.name) + " · " + all.length + " 道真题 · " + ys.length + " 个年份</h3>";
     h += '<div class="tiny muted" style="margin:-2px 0 2px">已自评 ' + doneAll + " / " + all.length + " 道　·　" +
@@ -2080,7 +2101,11 @@ if (ST.cardOpen) {
     h += '<div class="searchwrap"><input id="exq" class="searchbox" type="search" placeholder="搜关键词，如 戴维南 / 三相 / 触发器" value="' +
       esc(ST.examQ || "") + '">' +
       (ST.examQ ? '<button class="clr" data-act="examq-clear">✕</button>' : "") + "</div>";
-    h += '<div class="tiny muted" style="margin:2px 2px 10px">共 ' + nShown + " 道符合当前筛选</div>";
+    h += '<div class="tiny muted" style="margin:2px 2px 6px">共 ' + nShown + " 道符合当前筛选</div>";
+    if (nShown) {
+      h += '<button class="btn primary startdrill" data-act="open-exam" data-v="0" data-fresh="1">▶ 从第 1 题开始逐题做（' + nShown + " 道）</button>";
+      h += '<div class="tiny muted" style="margin:6px 2px 12px">一题一屏，只显示这道题所在的那段原卷；做完自评，自动跳下一题。</div>';
+    }
 
     ys.forEach(function (y) {
       var list = years[y].filter(examMatch);
@@ -2094,7 +2119,8 @@ if (ST.cardOpen) {
       list.forEach(function (p) {
         var done = A.DB.exam[p.id];
         var hot = (p.kp || []).some(function (k) { return (A.FREQ10[k] || 0) >= 3; });
-        h += '<div class="exrow' + (done ? " done" : "") + '" data-act="open-exam" data-s="' + esc(p._school || "shu") + '" data-v="' + p._i + '">';
+        var gi = shown.indexOf(p);
+        h += '<div class="exrow' + (done ? " done" : "") + '" data-act="open-exam" data-s="' + esc(p._school || "shu") + '" data-v="' + gi + '">';
         h += '<div class="exno">' + esc(p.no || "") + "</div>";
         h += '<div class="exmain"><div class="exbrief">' + esc(p.brief || "") + "</div>" +
           '<div class="exmeta"><span class="tag">' + esc(p.part || "") + "</span>" +
@@ -2104,7 +2130,7 @@ if (ST.cardOpen) {
           (hot ? '<span class="tag hot">高频</span>' : "") +
           (done ? '<span class="tag ok">做过</span>' : "") +
           "</div></div>";
-        h += '<div class="exacts"><button class="link" data-act="open-exam" data-s="' + esc(p._school || "shu") + '" data-v="' + p._i + '">原卷 ›</button></div>';
+        h += '<div class="exacts"><button class="link" data-act="open-exam" data-s="' + esc(p._school || "shu") + '" data-v="' + gi + '">原卷 ›</button></div>';
         h += "</div>";
       });
       h += "</div></div>";
@@ -2115,13 +2141,15 @@ if (ST.cardOpen) {
   }
   A.vExam = vExam;
 
-  /* 单道真题：摘要 + 原卷页 + 三档自评 */
+  /* 单道真题：逐题模式——一题一屏，只显示这道题那一段原卷 */
   function vExamOne(i) {
-    var p = A.schoolOf(ST.examSchool || "shu").list[i];
+    var lst = shownExam();
+    if (!lst || !lst.length) lst = (A.schoolOf(ST.examSchool || "shu").list || []);
+    var p = lst[i];
     if (!p) return '<div class="empty">没找到这道题</div>';
     var sch = A.schoolOf(p._school || ST.examSchool || "shu");
-    var lst = A.schoolOf(ST.examSchool || "shu").list;
-    var h = '<div class="row" style="margin-bottom:10px"><button class="btn ghost" data-act="exam-back">‹ 真题列表</button></div>';
+    var h = '<div class="row" style="margin-bottom:10px"><button class="btn ghost" data-act="exam-back">‹ 真题列表</button>' +
+      '<span class="grow"></span><span class="tiny muted">第 ' + (i + 1) + " / " + lst.length + " 题</span></div>";
     h += '<div class="card">';
     h += '<div class="qtop"><span class="tag y">' + esc(sch.short) + " · " + esc(String(p.year)) + " 年 " + esc(p.no || "") + "</span>" +
       '<span class="tag ' + (p.part === "信号" ? "sig" : "cir") + '">' + esc(p.part || "") + "</span>" +
@@ -2137,12 +2165,13 @@ if (ST.cardOpen) {
         if (!lid || !A.LESSON_MAP[lid]) return "";
         return '<button class="fblink" data-act="gotolesson" data-v="' + esc(lid) + '">看考点讲义 ›</button>';
       })() + "</div>";
-    h += figHTML(pagesOf(p), p.year + " 年原卷");
-    /* 上一题 / 下一题放在原卷下方，看完图直接翻页 */
+    /* 只截这道题所在的那一段；点「看整页」再展开整页 */
+    h += figCrop(p, p.year + " 年原卷");
+    /* 上一题 / 下一题放在题目下方 */
     h += '<div class="qnav">' +
       (i > 0 ? '<button class="btn ghost" data-act="open-exam" data-v="' + (i - 1) + '">‹ 上一题</button>' : '<span></span>') +
       '<span class="qn">' + (i + 1) + " / " + lst.length + "</span>" +
-      (i < lst.length - 1 ? '<button class="btn ghost" data-act="open-exam" data-v="' + (i + 1) + '">下一题 ›</button>' : '<span></span>') +
+      (i < lst.length - 1 ? '<button class="btn primary" data-act="open-exam" data-v="' + (i + 1) + '">下一题 ›</button>' : '<span></span>') +
       "</div>";
     var ansp = (sch.anspapers && sch.anspapers[String(p.year)]) || (p.ans ? [p.ans] : []);
     if (ansp.length) h += '<details class="ansbox"><summary>看参考答案（答案册第 ' + ansp[0] + " 页起）</summary>" +
@@ -3193,9 +3222,11 @@ if (ST.cardOpen) {
   ];
   var SUB = A.SUBVIEW || (A.SUBVIEW = { lesson: null, formula: 0, examone: -1, examschool: "shu", fig: -1 });
 
-  /* 当前院校的真题数组里取第 i 道 */
+  /* 当前筛选下的真题数组里取第 i 道（与列表顺序一致） */
   function examAt(i) {
-    return A.schoolOf(SUB.examschool || ST.examSchool || "shu").list[i];
+    var lst = (A.shownExam && A.shownExam()) || [];
+    if (!lst.length) lst = A.schoolOf(SUB.examschool || ST.examSchool || "shu").list || [];
+    return lst[Math.max(0, Math.min(lst.length - 1, Number(i) || 0))];
   }
 
   function currentView() {
@@ -3211,6 +3242,28 @@ if (ST.cardOpen) {
     return { id: "today", html: A.vToday() };
   }
 
+  /* 真题原卷的「只截这道题」：按归一化 y 把长图裁成一段 */
+  function applyCrops() {
+    Array.prototype.forEach.call(document.querySelectorAll(".figcrop"), function (box) {
+      if (box.getAttribute("data-done")) return;
+      var img = box.querySelector("img");
+      if (!img) return;
+      var y0 = parseFloat(box.getAttribute("data-y0") || "0");
+      var y1 = parseFloat(box.getAttribute("data-y1") || "1");
+      function fit() {
+        if (box.classList.contains("full")) return;
+        var ih = img.clientHeight;
+        if (!ih) return;
+        box.setAttribute("data-done", "1");
+        box.style.height = Math.min(340, Math.max(160, Math.round(ih * (y1 - y0)))) + "px";
+        img.style.transform = "translateY(" + Math.round(-ih * y0) + "px)";
+      }
+      if (img.complete && img.naturalWidth) fit();
+      else img.addEventListener("load", fit);
+      window.setTimeout(fit, 400);
+    });
+  }
+
   /* ---------- 渲染 ---------- */
   var lastView = "";
   function render() {
@@ -3219,6 +3272,7 @@ if (ST.cardOpen) {
     if (!box) return;
     var y = window.scrollY;
     box.innerHTML = v.html;
+    applyCrops();
     if (v.id !== lastView) window.scrollTo(0, 0);
     else if (y < 200) window.scrollTo(0, 0);
     lastView = v.id;
@@ -3886,7 +3940,8 @@ if (ST.cardOpen) {
     if (!p) return;
     A.recordExam(p.id, g);
     var r = (g === "ok" ? "右侧 " : "") + (g === "ok" ? "会" : g === "fuzzy" ? "不熟" : "不会");
-    A.toast("已记录：" + r, g === "ok" ? "ok" : "warn");
+    var lstN = (A.shownExam && A.shownExam().length) || 0;
+    A.toast("已记录：" + r + (i + 1 < lstN ? "　点下面「下一题」继续" : "　这一组做完了"), g === "ok" ? "ok" : "warn");
     if (ST.paperReview) { render(); return; }   /* 复盘面板里改了判定，立刻重算统计 */
     $$(".grade3 .gbtn").forEach(function (b) { b.classList.remove("sel"); });
     el.classList.add("sel");
@@ -3970,6 +4025,22 @@ if (ST.cardOpen) {
   on("ai-quick", function (el) {
     var t = document.getElementById("aiq");
     if (t) { t.value = el.getAttribute("data-v"); t.focus(); }
+  });
+  /* 原卷：在「只截这道题」和「整页」之间切换 */
+  on("figfull", function (el) {
+    var wrap = el.closest(".figwrap");
+    var box = wrap ? wrap.querySelector(".figcrop") : null;
+    if (!box) return;
+    var full = box.classList.toggle("full");
+    if (full) {
+      box.style.height = "auto";
+      var im = box.querySelector("img"); if (im) im.style.transform = "none";
+      el.textContent = "只看这道题 ›";
+    } else {
+      box.removeAttribute("data-done");
+      applyCrops();
+      el.textContent = "看整页 ›";
+    }
   });
   /* 解析折叠：默认收起，想看再展开 */
   on("fbxtoggle", function (el) {
