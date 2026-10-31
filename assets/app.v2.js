@@ -1435,7 +1435,10 @@
     var src = pagesOf(p)[0];
     if (!src) return "";
     var c = (window.QCROP || {})[p.id];
-    if (!c || c.length < 2 || c[1] - c[0] < 0.03) return figHTML([src], alt);
+    if (!c || c.length < 2 || c[1] - c[0] < 0.03)
+      /* 没有裁图坐标（上大真题是完整文字录入）：别再把整页糊上去，折叠着放 */
+      return '<details class="figdet"><summary>看原卷扫描页（第 ' + p.page + ' 页）›</summary>' +
+        figHTML([A.pageImg((EXMAP[p.id] || {}).sch ? EXMAP[p.id].sch.imgdir : "_", p.page)], alt) + "</details>";
     return '<div class="figwrap"><div class="figcrop" data-y0="' + c[0] + '" data-y1="' + c[1] + '">' +
       '<img src="' + esc(src) + '" alt="' + esc(alt || "原卷") + '" decoding="async"></div>' +
       '<div class="figcropbar"><span class="tiny muted">' + esc(alt || "原卷") + ' · 只截了这道题</span>' +

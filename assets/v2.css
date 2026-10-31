@@ -713,3 +713,10 @@ body.focus{padding-top:6px}
 .boot{margin:60px auto;text-align:center;color:#8b98a5;font-size:14px;line-height:1.9}
 .boot i{display:block;width:34px;height:34px;margin:10px auto 0;border:3px solid #e6ecf2;border-top-color:#2c5f8a;border-radius:50%;animation:bspin .9s linear infinite}
 @keyframes bspin{to{transform:rotate(360deg)}}
+
+/* 没有裁图坐标时用折叠的原卷页 */
+.figdet{margin:10px 0}
+.figdet>summary{cursor:pointer;font-size:13px;color:#2c5f8a;padding:8px 2px;list-style:none}
+.figdet>summary::-webkit-details-marker{display:none}
+.figdet>summary:before{content:"▸ ";color:#9aa7b4}
+.figdet[open]>summary:before{content:"▾ "}
