@@ -661,3 +661,34 @@ body.focus{padding-top:6px}
 .trapbox.vary .traphead{color:#2c5f8a}
 .traplist{margin:0;padding-left:16px;font-size:12.5px;line-height:1.6;color:var(--ink2)}
 .traplist li{margin:3px 0}
+
+/* ===== 题目上方 AI 入口 + 题下翻页 + 解析折叠 ===== */
+.aibtn{margin-left:auto;border:1px solid #cfe0f2;background:#f2f8ff;color:#2c5f8a;
+  font-size:12px;font-weight:650;padding:4px 9px;border-radius:999px;cursor:pointer;line-height:1.2}
+.aibtn:active{transform:scale(.97)}
+.aibtn+.starbtn,.aibtn~.starbtn{margin-left:4px}
+.qnav{position:sticky;bottom:76px;z-index:7;display:flex;align-items:center;justify-content:space-between;
+  gap:8px;margin:12px 0 4px;padding:7px 9px;border-radius:12px;background:rgba(255,255,255,.94);
+  border:1px solid var(--line);box-shadow:0 4px 14px rgba(20,40,70,.08);backdrop-filter:blur(6px)}
+.qnav .btn{padding:6px 11px;font-size:13px}
+.qnav .qn{font-size:12px;color:var(--ink3);font-variant-numeric:tabular-nums}
+.fb-ans{font-size:13px;color:var(--ink2);margin:-4px 0 10px}
+.fb-ans b{color:var(--ok);font-size:15px}
+.fb-ans b.bad{color:var(--bad)}
+.fbx{margin:6px 0 10px;border:1px solid var(--line);border-radius:10px;background:#fbfcfe;overflow:hidden}
+.fbx-h{display:block;width:100%;text-align:left;cursor:pointer;padding:10px 11px;font-size:13px;font-weight:650;
+  color:#2c5f8a;background:none;border:0;font-family:inherit}
+.fbx-h:active{background:#eef4fb}
+.fbx-in{padding:2px 11px 8px;border-top:1px dashed var(--line)}
+.ai-ctx{margin-bottom:8px;max-height:none;overflow:visible}
+.aictx-t{display:block;font-size:13px;color:var(--ink);margin-bottom:4px}
+.aictags{display:inline-flex;flex-wrap:wrap;gap:4px;margin:2px 0 5px}
+.aictags i{font-style:normal;font-size:11px;padding:1px 6px;border-radius:999px;background:#eef4fb;color:#3a6b96}
+.aictxbox{margin:5px 0 2px}
+.aictxbox pre{white-space:pre-wrap;word-break:break-word;font-size:11.5px;line-height:1.55;
+  background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:8px;margin:4px 0 0;color:var(--ink2)}
+.ai-quickrow{display:flex;gap:6px;overflow-x:auto;margin:2px 0 8px;scrollbar-width:none}
+.ai-quickrow::-webkit-scrollbar{display:none}
+.qchip{flex:0 0 auto;border:1px solid #d8e4f0;background:#fff;color:#33597c;font-size:12px;
+  padding:5px 10px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.qchip:active{background:#eef4fb}

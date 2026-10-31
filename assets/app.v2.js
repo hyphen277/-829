@@ -756,6 +756,56 @@
     return SCHOOLS[0];
   }
 
+  /* id → {p, sch}：AI 要看「这道题」的所有信息，必须能按 id 反查 */
+  var EXMAP = {};
+  SCHOOLS.forEach(function (s) {
+    (s.list || []).forEach(function (p) { EXMAP[p.id] = { p: p, sch: s }; });
+  });
+
+  /* 给 AI 读的题目上下文：题干、选项、答案、解析、考点，一次给全 */
+  var TYPECN = { choice: "选择题", calc: "计算题", fill: "填空题", proof: "证明题", short: "简答题" };
+  function qctx(kind, key) {
+    var out = { kind: kind, id: key, title: "", tags: [], text: "", has: 0 };
+    function kpNames(p) {
+      return (p.kp || []).map(function (k) { return (KPMAP[k] || {}).name || k; });
+    }
+    function tx(s) { return A.plain ? A.plain(s) : String(s || ""); }
+    if (kind === "exam") {
+      var e = EXMAP[key];
+      if (!e) return out;
+      var p = e.p, pg = (A.pagesOf ? A.pagesOf(p) : []);
+      out.title = e.sch.short + " · " + p.year + " 年 " + (p.no || "") + (p.part ? "（" + p.part + "）" : "");
+      out.tags = [e.sch.short, String(p.year) + " 年", p.part || "", p.type || "真题"]
+        .concat(kpNames(p)).filter(Boolean);
+      var scanned = (e.sch.id === "xdu" || e.sch.id === "guet");
+      out.text = "【真题】" + out.title + "\n" +
+        "题干（" + (scanned ? "扫描件 OCR，可能有错字" : "整理索引") + "）：" + (p.brief || "（无摘要）") + "\n" +
+        "考点：" + (kpNames(p).join("、") || "未标注") + "\n" +
+        (p.points ? "分值：" + p.points + " 分\n" : "") +
+        "完整题干与电路图在当年原卷扫描页（" + (pg.length ? String(pg[0]).split("/").pop() : "见原卷") +
+        " 等），我只能看到上面的文字摘要，看不到图片。";
+      out.has = 3;
+      return out;
+    }
+    var q = QMAP[key];
+    if (!q) return out;
+    out.title = (q.source || "练习题") + " · " + q.id;
+    out.tags = [q.subject || "", TYPECN[q.type] || q.type || ""].concat(kpNames(q)).filter(Boolean);
+    var t = "【" + (q.source || "练习题") + "】" + q.id + "\n题干：" + tx(q.stem);
+    if (q.type === "choice" && q.options) {
+      t += "\n选项：\n" + q.options.map(function (o, i) { return "ABCDEF"[i] + ". " + tx(o); }).join("\n");
+    }
+    if (q.answerText) t += "\n标准答案：" + tx(q.answerText);
+    else if (q.type === "choice" && q.answer != null) t += "\n正确选项：" + "ABCDEF"[q.answer];
+    if (q.solution) t += "\n参考解析：" + tx(q.solution).slice(0, 900);
+    if (q.pitfall) t += "\n易错点：" + tx(q.pitfall);
+    t += "\n考点：" + (kpNames(q).join("、") || "未标注");
+    out.text = t;
+    out.has = 4;
+    return out;
+  }
+  A.qctx = qctx;
+
   var SUBJ = [
     { id: "电路", kp: window.KP_CIRCUIT },
     { id: "信号", kp: window.KP_SIGNAL }
@@ -1318,7 +1368,7 @@
   };
 
 })(window.A = window.A || {});
-/* ==========================================================================
+﻿/* ==========================================================================
    829 训练台 v2 · p2 刷题引擎（三档自评 / 即时解析 / 真题原卷）
    ========================================================================== */
 (function (A) {
@@ -1495,6 +1545,15 @@
   function feedbackHTML(q, mark) {
     var h = '<div class="fb">';
     if (mark) h += '<div class="fb-verdict">' + mark + "</div>";
+    if (q.type === "choice" && q.answer != null) {
+      var _pk = (q.__picked != null) ? "ABCDEF"[q.__picked] : "";
+      var _ak = "ABCDEF"[q.answer];
+      h += '<div class="fb-ans">正确答案 <b>' + _ak + "</b>" +
+        (_pk && _pk !== _ak ? '　你选了 <b class="bad">' + _pk + "</b>" : "") + "</div>";
+    }
+    /* 解析默认折叠：答完先自己回想一遍，想看再展开 */
+    h += '<div class="fbx"><button class="fbx-h" data-act="fbxtoggle">▸ 展开解析 · 白话 / 完整步骤 / 易错点</button>' +
+      '<div class="fbx-in" style="display:none">';
 
     if (q.plain) {
       h += '<div class="fb-sec"><div class="fb-h"><i>💡</i>白话讲解</div><div class="fb-body">' + md(q.plain) + "</div></div>";
@@ -1529,6 +1588,7 @@
     if (q.type !== "choice" && q.answerText) {
       h += '<div class="fb-sec"><div class="fb-h"><i>🎯</i>标准答案</div><div class="fb-body">' + md(q.answerText) + "</div></div>";
     }
+    h += "</div></div>";
 
     h += '<div class="fb-kp"><span class="fb-kplabel">考什么</span>' + kpChips(q, true) +
       (function () {
@@ -1596,12 +1656,21 @@
     h += '<span class="tag d" title="难度 ' + esc(A.num(q.difficulty, 3)) + '">' + diffStars(q.difficulty) + "</span>";
     h += '<button class="starbtn' + (A.isStar(q.id) ? " on" : "") + '" data-act="star" data-v="' + esc(q.id) + '" title="收藏这道题">' +
       (A.isStar(q.id) ? "★" : "☆") + "</button>";
+    h += '<button class="aibtn" data-act="aiq" data-k="drill" data-v="' + esc(q.id) + '" title="这道题交给 AI 讲">🤖 问 AI</button>';
     h += "</div>";
 
     h += '<div class="stem">' + md(A.mathSub(q.stem)) + "</div>";
     if (A.qfig) { var fg = A.qfig(q.id); if (fg) h += '<div class="qfig">' + fg + '<div class="figcap">示意图由题干参数生成 · 仅供参考</div></div>'; }
     if (q.fig && q.fig.length) h += figHTML(q.fig, "题图");
     h += '<div class="qbody" id="qbody"></div>';
+    /* 上一题 / 下一题紧贴题目下方，滚到解析里也一直能点到 */
+    if (!ST.pin && total > 1) {
+      h += '<div class="qnav">' +
+        '<button class="btn ghost" data-act="prev">‹ 上一题</button>' +
+        '<span class="qn">' + (idx + 1) + " / " + total + "</span>" +
+        '<button class="btn ghost" data-act="next">下一题 ›</button>' +
+        "</div>";
+    }
     h += '<div id="qafter"></div>';
 
     var nt = A.noteGet(q.id);
@@ -1610,13 +1679,6 @@
       '<textarea id="nq" data-q="' + esc(q.id) + '" placeholder="记这题的坑：漏了哪个条件、公式怎么来的、下次从哪下手…">' +
       esc(nt) + "</textarea></details>";
 
-    if (!ST.pin && total > 1) {
-      h += '<div class="qfoot">' +
-        '<button class="btn ghost" data-act="prev">‹ 上一题</button>' +
-        '<span class="qn">' + (idx + 1) + " / " + total + "</span>" +
-        '<button class="btn ghost" data-act="next">下一题 ›</button>' +
-        "</div>";
-    }
     h += "</div>";
     return h;
   }
@@ -2065,7 +2127,8 @@ if (ST.cardOpen) {
       '<span class="tag ' + (p.part === "信号" ? "sig" : "cir") + '">' + esc(p.part || "") + "</span>" +
       (p.type ? '<span class="tag t">' + esc(p.type) + "</span>" : "") +
       (p.points ? '<span class="tag">' + p.points + " 分</span>" : "") +
-      '<span class="tag d">' + diffStars(p.difficulty) + "</span></div>";
+      '<span class="tag d">' + diffStars(p.difficulty) + "</span>" +
+      '<button class="aibtn" data-act="aiq" data-k="exam" data-v="' + esc(p.id) + '" title="这道真题交给 AI 讲">🤖 问 AI</button></div>';
     h += '<div class="exbrief big">' + esc(p.brief || "") + "</div>";
     h += '<div class="fb-kp"><span class="fb-kplabel">考什么</span>' + kpChips(p, true) +
       (function () {
@@ -2075,6 +2138,12 @@ if (ST.cardOpen) {
         return '<button class="fblink" data-act="gotolesson" data-v="' + esc(lid) + '">看考点讲义 ›</button>';
       })() + "</div>";
     h += figHTML(pagesOf(p), p.year + " 年原卷");
+    /* 上一题 / 下一题放在原卷下方，看完图直接翻页 */
+    h += '<div class="qnav">' +
+      (i > 0 ? '<button class="btn ghost" data-act="open-exam" data-v="' + (i - 1) + '">‹ 上一题</button>' : '<span></span>') +
+      '<span class="qn">' + (i + 1) + " / " + lst.length + "</span>" +
+      (i < lst.length - 1 ? '<button class="btn ghost" data-act="open-exam" data-v="' + (i + 1) + '">下一题 ›</button>' : '<span></span>') +
+      "</div>";
     var ansp = (sch.anspapers && sch.anspapers[String(p.year)]) || (p.ans ? [p.ans] : []);
     if (ansp.length) h += '<details class="ansbox"><summary>看参考答案（答案册第 ' + ansp[0] + " 页起）</summary>" +
       figHTML(ansp.slice(0, 2).map(function (n) { return A.pageImg(p._ansdir || p._imgdir || "gt", n); }), p.year + " 年参考答案") +
@@ -2093,10 +2162,6 @@ if (ST.cardOpen) {
         '<span class="gs">' + x.s + '</span><span class="gt">' + x.t + "</span></button>";
     });
     h += "</div>";
-    h += '<div class="row" style="margin-top:12px;gap:8px">' +
-      (i > 0 ? '<button class="btn ghost sm" data-act="open-exam" data-v="' + (i - 1) + '">‹ 上一题</button>' : "") +
-      (i < lst.length - 1 ? '<button class="btn ghost sm" data-act="open-exam" data-v="' + (i + 1) + '">下一题 ›</button>' : "") +
-      '<span class="tiny muted" style="margin-left:auto">' + (i + 1) + " / " + lst.length + "</span></div>";
     h += "</div>";
 
     /* 同考点的其他真题：把这个考点的历年考法一次看完 */
@@ -2192,7 +2257,8 @@ if (ST.cardOpen) {
     h += '<div class="card">';
     h += '<div class="qtop"><span class="tag y">' + esc(sch.short) + " · " + esc(String(p.year)) + " 年 " + esc(p.no || "") + "</span>" +
       '<span class="tag cir">' + esc(p.part || "电路") + "</span>" +
-      (p.points ? '<span class="tag">' + p.points + " 分</span>" : "") + "</div>";
+      (p.points ? '<span class="tag">' + p.points + " 分</span>" : "") +
+      '<button class="aibtn" data-act="aiq" data-k="exam" data-v="' + esc(p.id) + '" title="这道真题交给 AI 讲">🤖 问 AI</button></div>';
     if (p.brief) h += '<div class="figbrief">' + esc(A.lead(A.plain(p.brief), 180)) + "</div>";
     (function () {
       var r = A.DB.exam && A.DB.exam[p.id];
@@ -2205,16 +2271,18 @@ if (ST.cardOpen) {
     h += '<button class="btn ghost block figopen" data-act="fig-img">' +
       (A.ST.figImg ? "收起原卷页" : "看原卷页（第 " + p.page + " 页）") + "</button>";
     if (A.ST.figImg) h += figHTML([A.pageImg(sch.imgdir, p.page)], "原卷 · 第 " + p.page + " 页");
+    h += '<div class="qnav">' +
+      (i > 0 ? '<button class="btn ghost" data-act="fig-go" data-v="' + (i - 1) + '">‹ 上一题</button>' : "<span></span>") +
+      '<span class="qn">' + (i + 1) + " / " + n + "</span>" +
+      (i < n - 1 ? '<button class="btn ghost" data-act="fig-go" data-v="' + (i + 1) + '">下一题 ›</button>' : "<span></span>") +
+      "</div>";
     h += '<div class="grade3" style="margin-top:12px">';
     G3.forEach(function (g) {
       h += '<button class="gbtn ' + g.cls + '" data-act="figgrade" data-g="' + g.g + '">' +
         '<span class="gs">' + g.s + '</span><span class="gt">' + g.t + "</span></button>";
     });
     h += "</div>";
-    h += '<div class="row" style="margin-top:12px;gap:8px">' +
-      (i > 0 ? '<button class="btn ghost sm" data-act="fig-go" data-v="' + (i - 1) + '">‹ 上一题</button>' : "") +
-      (i < n - 1 ? '<button class="btn ghost sm" data-act="fig-go" data-v="' + (i + 1) + '">下一题 ›</button>' : "") +
-      "</div></div>";
+    h += "</div></div>";
     return h;
   }
   A.vFigDrill = vFigDrill;
@@ -2243,6 +2311,7 @@ if (ST.cardOpen) {
   A.openZoom = openZoom; A.closeZoom = closeZoom;
 
 })(window.A);
+
 /* ==========================================================================
    829 训练台 v2 · p3 视图：今日 / 讲义 / 公式 / 错题 / 统计
    ========================================================================== */
@@ -2417,7 +2486,8 @@ if (ST.cardOpen) {
       var pg = A.pagesOf(dq);
       h += '<div class="card daily">';
       h += '<div class="dh"><span class="dtag">每日一题</span><span class="tiny muted">' + esc(String(dq.year)) + " 年" +
-        (dq.no ? " · " + esc(dq.no) : "") + (dq.points ? " · " + dq.points + " 分" : "") + "</span></div>";
+        (dq.no ? " · " + esc(dq.no) : "") + (dq.points ? " · " + dq.points + " 分" : "") + "</span>" +
+        '<button class="aibtn" data-act="aiq" data-k="exam" data-v="' + esc(dq.id) + '">🤖 问 AI</button></div>';
       h += '<div class="dst">' + md(dq.brief || "") + "</div>";
       if (pg.length) {
         h += '<div class="dthumb">' + A.figHTML(pg.slice(0, 1), "原卷") + "</div>";
@@ -3890,9 +3960,25 @@ if (ST.cardOpen) {
 
   /* ---------- 问 AI（手动触发） ---------- */
   var AIKEY = "kaoyan829.aikey";
+  var AI_CTX = null;
   function aiKey() { try { return localStorage.getItem(AIKEY) || ""; } catch (e) { return ""; } }
 
   on("askai", function () { openAI(); });
+  on("aiq", function (el) {
+    openAI(el.getAttribute("data-k") || "drill", el.getAttribute("data-v"));
+  });
+  on("ai-quick", function (el) {
+    var t = document.getElementById("aiq");
+    if (t) { t.value = el.getAttribute("data-v"); t.focus(); }
+  });
+  /* 解析折叠：默认收起，想看再展开 */
+  on("fbxtoggle", function (el) {
+    var box = el.parentNode, body = box ? box.querySelector(".fbx-in") : null;
+    if (!body) return;
+    var open = body.style.display !== "none";
+    body.style.display = open ? "none" : "block";
+    el.textContent = open ? "▸ 展开解析 · 白话 / 完整步骤 / 易错点" : "▾ 收起解析";
+  });
 
   function currentQuestion() {
     if (SUB.examone >= 0) {
@@ -3912,8 +3998,14 @@ if (ST.cardOpen) {
     return { title: q.id, body: s };
   }
 
-  function openAI() {
-    var cur = currentQuestion();
+  function openAI(kind, key) {
+    var ctx = null;
+    if (kind && key && A.qctx) ctx = A.qctx(kind, key);
+    if (!ctx || !ctx.text) {
+      var cur = currentQuestion();
+      ctx = cur ? { title: cur.title, text: "题目：" + cur.body, tags: [], has: 0 } : null;
+    }
+    AI_CTX = ctx;
     var el = document.getElementById("aisheet");
     if (!el) {
       el = document.createElement("div");
@@ -3923,6 +4015,7 @@ if (ST.cardOpen) {
         '<div class="sheet-in">' +
         '<div class="sheet-h"><b>问 AI</b><button class="x" data-act="ai-close">✕</button></div>' +
         '<div class="ai-ctx tiny muted"></div>' +
+        '<div class="ai-quickrow"></div>' +
         '<textarea id="aiq" class="aiq" rows="3" placeholder="哪里不懂就问，比如：第二步为什么这么设节点？"></textarea>' +
         '<div class="row"><input id="aikey" class="aikey" type="password" placeholder="DeepSeek API Key（只存在本机）">' +
         '<button class="btn ghost sm" data-act="ai-savekey">保存</button></div>' +
@@ -3936,7 +4029,22 @@ if (ST.cardOpen) {
         "</div>";
       document.body.appendChild(el);
     }
-    el.querySelector(".ai-ctx").textContent = cur ? cur.title : "没有正在看的题";
+    /* 上下文：题目信息已经替你读好了，直接问就行 */
+    var cbox = el.querySelector(".ai-ctx");
+    if (ctx) {
+      cbox.innerHTML = '<b class="aictx-t">' + esc(ctx.title || "这道题") + "</b>" +
+        (ctx.tags && ctx.tags.length ? '<span class="aictags">' + ctx.tags.map(function (t) { return '<i>' + esc(t) + "</i>"; }).join("") + "</span>" : "") +
+        '<span class="tiny">已自动读取：题干 · 选项 · 答案 · 解析 · 考点</span>' +
+        '<details class="aictxbox"><summary class="tiny">看 AI 读到的内容</summary><pre>' + esc(ctx.text) + "</pre></details>";
+    } else {
+      cbox.innerHTML = '<span class="tiny">没有正在看的题（从题目上方的「🤖 问 AI」进来会带着题）</span>';
+    }
+    var qr = el.querySelector(".ai-quickrow");
+    if (qr) {
+      qr.innerHTML = ctx ? ["这题怎么入手？", "第二步为什么这么做？", "我的理解哪里错了？", "换个更简单的讲法"].map(function (t) {
+        return '<button class="qchip" data-act="ai-quick" data-v="' + esc(t) + '">' + esc(t) + "</button>";
+      }).join("") : "";
+    }
     el.classList.add("on");
     document.body.classList.add("noscroll");
     var k = document.getElementById("aikey");
@@ -3946,13 +4054,12 @@ if (ST.cardOpen) {
     var m = document.getElementById("aimodel");
     if (m) m.value = (localStorage.getItem("kaoyan829.v2.aimodel") || "");
     var out0 = document.getElementById("aiout");
-    var past = cur && A.DB.ai ? A.DB.ai[cur.id] : null;
+    var past = ctx && A.DB.ai ? A.DB.ai[ctx.id || ctx.title] : null;
     out0.innerHTML = past
       ? '<div class="tiny muted">上次的回答</div><div class="aitext">' + md(past) + "</div>"
       : "";
     var t = document.getElementById("aiq");
     if (t) { t.value = ""; setTimeout(function () { t.focus(); }, 120); }
-    document.getElementById("aiout").innerHTML = "";
   }
   on("ai-close", function () {
     var el = document.getElementById("aisheet");
@@ -3972,9 +4079,9 @@ if (ST.cardOpen) {
     if (!key) { A.toast("先填 API Key（platform.deepseek.com 申请）", "warn"); return; }
     var q = (document.getElementById("aiq") || {}).value || "";
     if (!q.trim()) { A.toast("先写一下想问什么", "warn"); return; }
-    var cur = currentQuestion();
-    var out = document.getElementById("aiout");
-    out.innerHTML = '<div class="aiwait">思考中…</div>';
+    var ctxNow = AI_CTX;
+    var outEl = document.getElementById("aiout");
+    outEl.innerHTML = '<div class="aiwait">思考中…</div>';
 
     var base = ((document.getElementById("aibase") || {}).value || "").trim() || "https://api.deepseek.com";
     var model = ((document.getElementById("aimodel") || {}).value || "").trim() || "deepseek-chat";
@@ -3989,7 +4096,7 @@ if (ST.cardOpen) {
     }
     var sys = "你是考研电路与信号系统的辅导老师。用最直白的中文解释，先讲这一步在干什么，再讲为什么这么做，" +
       "最后提醒易错点。不要长篇大论，控制在 300 字内。公式用 $...$ 包裹。";
-    var user = (cur ? "题目：" + cur.body + "\n\n" : "") + "我的问题：" + q;
+    var user = (ctxNow && ctxNow.text ? ctxNow.text + "\n\n" : "") + "我的问题：" + q;
 
     fetch(base, {
       method: "POST",
@@ -4002,16 +4109,16 @@ if (ST.cardOpen) {
     }).then(function (r) {
       if (!r.ok) throw new Error("HTTP " + r.status + (r.status === 401 ? "（Key 不对）" : ""));
       var reader = r.body.getReader(), dec = new TextDecoder(), buf = "", acc = "";
-      out.innerHTML = '<div class="aitext"></div>';
-      var box = out.querySelector(".aitext");
+      outEl.innerHTML = '<div class="aitext"></div>';
+      var box = outEl.querySelector(".aitext");
       function pump() {
         return reader.read().then(function (res) {
           if (res.done) {
             A.toast("回答完成", "ok");
-            var cq = currentQuestion();
-            if (cq && acc) {
+            var key2 = ctxNow && (ctxNow.id || ctxNow.title);
+            if (key2 && acc) {
               A.DB.ai = A.DB.ai || {};
-              A.DB.ai[cq.id] = acc;
+              A.DB.ai[key2] = acc;
               try { A.save(); } catch (e) {}
             }
             return;
@@ -4039,7 +4146,7 @@ if (ST.cardOpen) {
       if (/401|403/.test(msg)) hint = "Key 不对或没有权限：去「我的 → AI 答疑」重新粘一次 Key。";
       else if (/429/.test(msg)) hint = "请求太频繁或额度用完：等一会儿再试，或去平台看余额。";
       else if (/Failed to fetch|NetworkError|network/i.test(msg)) hint = "网络没通：确认手机能上网，或者这个接口地址被墙。";
-      out.innerHTML = '<div class="aibad">失败了：' + esc(msg) + "</div>" +
+      outEl.innerHTML = '<div class="aibad">失败了：' + esc(msg) + "</div>" +
         '<div class="tiny muted">' + esc(hint) + "</div>" +
         '<div class="row"><button class="btn ghost sm" data-act="ai-send">再试一次</button></div>';
     });
