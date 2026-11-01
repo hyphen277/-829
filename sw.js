@@ -1,6 +1,6 @@
 /* 829 训练台 service worker：离线打开 + 秒开。
    策略：页面与代码网络优先（保证更新），图片字体缓存优先（省流量、快）。 */
-const V = "56d63b5a7f";
+const V = "033d7e2a09";
 const CORE = [
   "./index.html",
   "./manifest.webmanifest",

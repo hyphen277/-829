@@ -408,7 +408,10 @@
       s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
       s = s.replace(/(^|[^\*])\*([^\*\n]+)\*/g, "$1<em>$2</em>");
       s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
-      s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+      s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (m, t, u) {
+        if (!/^(https?:|mailto:)/i.test(u)) return t;
+        return '<a href="' + u + '" target="_blank" rel="noopener noreferrer">' + t + "</a>";
+      });
       return s;
     }
     function isBlockStart(l) {
@@ -511,6 +514,8 @@
     o.hl = o.hl || {};
     o.read = o.read || {};
     o.pos = o.pos || {};
+    o.pick = o.pick || {};
+    o.timer = o.timer || {};
     o.first = o.first || b.first;
     o.tipSeen = o.tipSeen || 0;
     /* v1 的 wrong 只有 {at,n}，没有分类：一律记成「不会」 */
@@ -529,12 +534,21 @@
     try { o = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { o = null; }
     return migrate(o);
   }
-  var saveTimer = null;
+  var saveTimer = null, saveWarned = 0;
   function save() {
     if (saveTimer) return;
     saveTimer = setTimeout(function () {
       saveTimer = null;
-      try { localStorage.setItem(KEY, JSON.stringify(DB)); } catch (e) { }
+      try { localStorage.setItem(KEY, JSON.stringify(DB)); A.__saveErr = null; }
+      catch (e) {
+        A.__saveErr = (e && e.name) || "error";
+        if (!saveWarned) {
+          saveWarned = 1;
+          try {
+            A.toast(/Quota/i.test(A.__saveErr) ? "本机存储已满，进度存不进去了——现在去「我的 → 导出备份」" : "本机存储写不进去（隐私模式？），进度可能丢——去「我的」导出备份", "warn");
+          } catch (x) { }
+        }
+      }
     }, 120);
   }
   function saveNow() {
@@ -546,6 +560,26 @@
   DB = load();
   A.DB = DB;
   A.save = save; A.saveNow = saveNow;
+
+  function timerGet(k) { return (DB.timer || {})[k] || 0; }
+  function timerPut(k, v) {
+    DB.timer = DB.timer || {};
+    if (v) DB.timer[k] = v; else delete DB.timer[k];
+    saveNow();
+  }
+  A.timerGet = timerGet; A.timerPut = timerPut;
+
+  /* 选择题作答状态：存 DB，重进这道题能还原结论，而不是变成点不动的死界面 */
+  function getPick(id) { return (DB.pick || {})[id] || null; }
+  function setPick(id, i, right) {
+    DB.pick = DB.pick || {};
+    DB.pick[id] = { i: i, right: right, at: todayStr() };
+    save();
+  }
+  function clearPick(id) {
+    if (DB.pick && DB.pick[id]) { delete DB.pick[id]; save(); }
+  }
+  A.getPick = getPick; A.setPick = setPick; A.clearPick = clearPick;
 
   /* 手机切走/关页时立刻落盘，别让 120ms 的延迟吞掉最后一条记录 */
   (function () {
@@ -647,8 +681,14 @@
         saveNow(); toast("导入成功", "ok");
         A.render();
       }
-      if (A.ask) A.ask("导入会覆盖当前所有记录，确定吗？", doImport, "导入");
-      else if (confirm("导入会覆盖当前所有记录，确定吗？")) doImport();
+      /* 先报备份里有什么，再问要不要覆盖 —— 误传别的 JSON 也能看出来 */
+      var nQ = Object.keys(d.q || {}).length;
+      var nW = Object.keys(d.wrong || {}).length;
+      var at = d.backupAt ? new Date(d.backupAt) : null;
+      var when = at ? (at.getMonth() + 1) + " 月 " + at.getDate() + " 日" : "未标注日期";
+      var msg = "这份备份：" + when + " · 记录 " + nQ + " 题 · 错题 " + nW + " 道。\n导入会覆盖当前所有记录，确定吗？";
+      if (A.ask) A.ask(msg, doImport, "导入");
+      else if (confirm(msg)) doImport();
       return;
     };
     fr.readAsText(file);
@@ -1223,9 +1263,9 @@
     if (!id || !(secs > 0)) return;
     var r = A.DB.q[id] = A.DB.q[id] || { n: 0, ok: 0 };
     r.ts = (r.ts || 0) + secs; r.tn = (r.tn || 0) + 1;
-    if (secs >= 120) { r.slow = (r.slow || 0) + 1; if (!r.due) r.due = A.addDays(A.todayStr(), 1); }
+    if (secs >= 120) { r.slow = (r.slow || 0) + 1; if (!r.due) r.due = A.addDays(1); }
   };
-  A.logTime = A.logTime;
+
 
   /* 选择题已自动归档后，只调整「错因细分」不再重复计数 */
   function rekind(qid, g) {
@@ -1363,9 +1403,12 @@
   A.applyTheme = applyTheme;
   A.THEME = function () { return THEME; };
   A.tick = function () {
-    var d = dayDiff(todayStr(), "2026-12-19");
+    var d = daysLeft();
     var el = $("#countdown");
-    if (el) el.innerHTML = d > 0 ? '距考试 <b>' + d + '</b> 天' : '考试周';
+    if (!el) return;
+    el.innerHTML = d > 0
+      ? "距考试 <b>" + d + "</b> 天"
+      : (d === 0 ? "今天上考场" : '<span class="cdover" data-act="fixdate">本届已结束 · 点这里改日期</span>');
   };
 
 })(window.A = window.A || {});
@@ -1563,7 +1606,8 @@
     var h = '<div class="fb">';
     if (mark) h += '<div class="fb-verdict">' + mark + "</div>";
     if (q.type === "choice" && q.answer != null) {
-      var _pk = (q.__picked != null) ? "ABCDEF"[q.__picked] : "";
+      var _pd = A.getPick ? A.getPick(q.id) : null;
+      var _pk = _pd ? "ABCDEF"[_pd.i] : "";
       var _ak = "ABCDEF"[q.answer];
       h += '<div class="fb-ans">正确答案 <b>' + _ak + "</b>" +
         (_pk && _pk !== _ak ? '　你选了 <b class="bad">' + _pk + "</b>" : "") + "</div>";
@@ -1636,14 +1680,15 @@
       h += '<div class="row" style="margin:2px 0 10px"><button class="btn ghost sm" data-act="figdrill">⚡ 去「读图专项」练带图的电路题</button></div>';
     })();
 
-    var Gx = (mark && q && q.__picked != null) ? G3.filter(function (x) { return x.g !== "ok"; }) : G3;
+    var _pkd = (q && A.getPick) ? A.getPick(q.id) : null;
+    var Gx = (mark && _pkd) ? G3.filter(function (x) { return x.g !== "ok"; }) : G3;
     h += '<div class="grade3">';
     Gx.forEach(function (x) {
       h += '<button class="gbtn ' + x.cls + '" data-act="grade" data-g="' + x.g + '" title="' + esc(x.tip) + '">' +
         '<span class="gs">' + x.s + '</span><span class="gt">' + x.t + "</span></button>";
     });
     h += "</div>";
-    h += '<div class="tiny gradehint">' + (mark && q && q.__picked != null ? '已自动归档；要细分就点「不熟悉 / 不会」' : '正确 → 直接过；不熟悉 / 不会 → 收进「重测」，之后单独刷') + '</div>';
+    h += '<div class="tiny gradehint">' + (mark && _pkd ? '已自动归档；要细分就点「不熟悉 / 不会」' : '正确 → 直接过；不熟悉 / 不会 → 收进「重测」，之后单独刷') + '</div>';
     h += "</div>";
     return h;
   }
@@ -1707,9 +1752,18 @@
     var q = ST.list[ST.qi];
     if (!q) return;
     if (q.type === "choice") {
+      var pk0 = A.getPick ? A.getPick(q.id) : null;
       var h = '<div class="opts">';
       (q.options || []).forEach(function (o, i) {
-        h += '<button class="opt" data-act="pick" data-i="' + i + '"><b>' + "ABCDEF"[i] + "</b><span>" + md(o) + "</span></button>";
+        var cls = "opt";
+        if (pk0) {
+          cls += " dim";
+          if (q.answer != null && i === q.answer) cls += " right";
+          if (i === pk0.i && pk0.right === false) cls += " wrong";
+          if (i === pk0.i) cls += " chosen";
+        }
+        h += '<button class="' + cls + '" data-act="pick" data-i="' + i + '"' + (pk0 ? " disabled" : "") +
+          "><b>" + "ABCDEF"[i] + "</b><span>" + md(o) + "</span></button>";
       });
       h += "</div>";
       box.innerHTML = h;
@@ -1722,9 +1776,10 @@
   /* 选选项：只揭晓对错，不直接判分（分数交给三按钮） */
   function pickOption(i) {
     var q = ST.list[ST.qi];
-    if (!q || q.__picked != null) return;
+    if (!q) return;
+    if (A.getPick && A.getPick(q.id)) return;   /* 已经答过（结论在 DB 里），要重答走「重做这道」 */
     if (ST.qid === q.id && ST.qT0 && A.logTime) A.logTime(q.id, Math.round((Date.now() - ST.qT0) / 1000));
-    q.__picked = i;
+    if (A.setPick) A.setPick(q.id, i, (q.answer == null) ? null : (i === q.answer));
     var right = (q.answer == null) ? null : (i === q.answer);
     A.$$("#qbody .opt").forEach(function (b, j) {
       b.classList.add("dim");
@@ -3291,7 +3346,10 @@ if (ST.cardOpen) {
     var box = $("#view");
     if (!box) return;
     var y = window.scrollY;
-    box.innerHTML = v.html;
+    var SUBTITLE = { examone: "真题 · 逐题", paper: "整卷答题", figdrill: "读图专项", lesson: "讲义", formula: "公式速查" };
+    box.innerHTML = SUBTITLE[v.id]
+      ? '<div class="subtop"><button class="link" data-act="subback">‹ 返回</button><b>' + SUBTITLE[v.id] + "</b></div>" + v.html
+      : v.html;
     applyCrops();
     preloadNextExamPage();
     if (v.id !== lastView) window.scrollTo(0, 0);
@@ -3303,7 +3361,7 @@ if (ST.cardOpen) {
     else { var hb = document.getElementById("hlbar"); if (hb) hb.classList.remove("on"); }
     if (v.id === "drill") {
       A.mountBody();
-      if (ST.__answered) restoreAnswered();
+      restorePick();
       /* 记住停在哪，供「今日 → 立即刷题」接着做 */
       if (ST.list && ST.list.length) A.saveLast();
       /* 第一次进刷题：教一下手势/键位 */
@@ -3316,6 +3374,7 @@ if (ST.cardOpen) {
     if (window.renderMathInElement) { /* katex 已经嵌在 md 里 */ }
   }
   A.render = function () { render(); };
+  A.currentViewId = function () { return currentView().id; };
   A.render = render;
 
   function paintNav(id) {
@@ -3325,8 +3384,23 @@ if (ST.cardOpen) {
     });
   }
 
-  /* 已经答过的当前题：重绘时恢复反馈区 */
-  function restoreAnswered() {
+  /* 回到做过的选择题：把上次结论 + 解析摆回来，并给「重做这道」 */
+  function restorePick() {
+    var q = ST.list[ST.qi];
+    if (!q || q.type !== "choice") return;
+    var pk = A.getPick ? A.getPick(q.id) : null;
+    if (!pk) return;
+    var af = $("#qafter");
+    if (!af) return;
+    var mark = pk.right === true ? '<span class="ok">你选对了</span>'
+      : pk.right === false ? '<span class="bad">选错了</span>'
+        : '<span class="muted">已揭晓</span>';
+    af.innerHTML = '<div class="redobar"><span class="tiny muted">上次做这道：' + esc(pk.at || "") + "</span>" +
+      '<button class="link" data-act="repick" data-v="' + esc(q.id) + '">重做这道 ›</button></div>' +
+      A.feedbackHTML(q, mark);
+    var body = $("#qbody"); if (body) body.classList.add("done");
+  }
+  function restoreAnsweredDead() {
     var q = ST.list[ST.qi];
     if (!q) return;
     var key = q.id + "#" + (ST.__stamp || "");
@@ -3352,6 +3426,8 @@ if (ST.cardOpen) {
   /* ---------- 搜索框防抖 ---------- */
   var searchTimer = null;
   function hookSearch() {
+    document.addEventListener("compositionstart", function () { A.__composing = true; }, true);
+    document.addEventListener("compositionend", function () { A.__composing = false; }, true);
     [["#gsearch", "gq", "today"], ["#kpsearch", "nq", "kplist"], ["#lssearch", "lq", "lslist"], ["#fsearch", "fq", "flist"], ["#wsearch", "wq", "wlist"]].forEach(function (p) {
       var el = $(p[0]);
       if (!el) return;
@@ -3359,6 +3435,7 @@ if (ST.cardOpen) {
         ST[p[1]] = el.value;
         if (searchTimer) clearTimeout(searchTimer);
         searchTimer = setTimeout(function () {
+          if (A.__composing) return;   /* 拼音还在组词，别打断 */
           render();
           var e2 = $(p[0]);
           if (e2) { e2.focus(); e2.setSelectionRange(e2.value.length, e2.value.length); }
@@ -3561,6 +3638,36 @@ if (ST.cardOpen) {
     } else window.scrollTo(0, A.posGet(id));
   });
   on("lesson-back", function () { SUB.lesson = null; render(); window.scrollTo(0, 0); });
+
+  /* 子页顶栏的返回：按层级退一层 */
+  on("subback", function () {
+    if (SUB.paper) SUB.paper = null;
+    else if (SUB.examone >= 0) SUB.examone = -1;
+    else if (SUB.fig >= 0) SUB.fig = -1;
+    else if (SUB.lesson) SUB.lesson = null;
+    else if (SUB.formula) SUB.formula = 0;
+    render();
+    window.scrollTo(0, 0);
+  });
+
+  /* 这道题重做：清掉上次作答，重新给选项 */
+  on("repick", function (el) {
+    var id = el.getAttribute("data-v");
+    if (id && A.clearPick) A.clearPick(id);
+    var af = $("#qafter"); if (af) af.innerHTML = "";
+    var body = $("#qbody");
+    if (body) { body.classList.remove("done"); body.innerHTML = ""; }
+    A.mountBody();
+  });
+
+  /* 顶部「本届已结束」→ 直接去改考试日期 */
+  on("fixdate", function () {
+    go("stats");
+    setTimeout(function () {
+      var el = document.getElementById("examdate");
+      if (el) { el.scrollIntoView({ block: "center" }); el.focus(); }
+    }, 120);
+  });
 
   /* ---------- 讲义划线重点 ---------- */
   var pendingHL = "";
@@ -3816,7 +3923,7 @@ if (ST.cardOpen) {
   /* 整卷模式：一年一套卷，翻页看原卷 */
   on("paper", function (el) {
     SUB.lesson = null; SUB.formula = 0; SUB.examone = -1;
-    SUB.paper = { year: parseInt(el.getAttribute("data-v"), 10), i: 0 };
+    SUB.paper = { year: parseInt(el.getAttribute("data-v"), 10), i: 0, sch: ST.examSchool || "shu" };
     render();
     window.scrollTo(0, 0);
   });
@@ -3832,10 +3939,11 @@ if (ST.cardOpen) {
   on("paper-close", function () { SUB.paper = null; render(); });
 
   /* 整卷计时：模拟考场，3 小时倒计时，刷新也不丢 */
-  var TIMER_KEY = "kaoyan829.v2.ptimer";
-  function timerMap() { try { return JSON.parse(localStorage.getItem(TIMER_KEY) || "{}") || {}; } catch (e) { return {}; } }
-  function timerEnd(y) { return timerMap()[y] || 0; }
-  function timerSet(y, ts) { var m = timerMap(); m[y] = ts; try { localStorage.setItem(TIMER_KEY, JSON.stringify(m)); } catch (e) { } }
+  /* 计时按「学校 + 年份」分开：三校年份大量重叠，只用年份会串表；数据进 DB，导出备份也带走 */
+  function tkey(y) { return (SUB.paper && SUB.paper.sch ? SUB.paper.sch : (ST.examSchool || "shu")) + "-" + y; }
+  function timerMap() { return {}; }
+  function timerEnd(y) { return A.timerGet(tkey(y)); }
+  function timerSet(y, ts) { A.timerPut(tkey(y), ts); }
   function fmtLeft(ms) {
     if (ms < 0) ms = 0;
     var s = Math.floor(ms / 1000), hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), ss = s % 60;
@@ -3853,10 +3961,10 @@ if (ST.cardOpen) {
   on("ptimer", function () {
     if (!SUB.paper) return;
     var y = SUB.paper.year;
-    if (timerEnd(y)) { timerSet(y, 0); timerSet("start-" + y, 0); A.toast("已清零"); }
+    if (timerEnd(y)) { timerSet(y, 0); A.timerPut(tkey(y) + "-start", 0); A.toast("已清零"); }
     else {
       timerSet(y, Date.now() + 3 * 3600 * 1000);
-      timerSet("start-" + y, Date.now());
+      A.timerPut(tkey(y) + "-start", Date.now());
       A.toast("开始计时，3 小时");
     }
     paintTimer();
@@ -3864,13 +3972,13 @@ if (ST.cardOpen) {
   });
   on("ptimer-clear", function () {
     if (!SUB.paper) return;
-    timerSet(SUB.paper.year, 0); timerSet("start-" + SUB.paper.year, 0); render(); A.toast("已清零");
+    timerSet(SUB.paper.year, 0); A.timerPut(tkey(SUB.paper.year) + "-start", 0); render(); A.toast("已清零");
   });
 
   /* 交卷：停表 + 生成本卷复盘（用时、会做率、逐题对错） */
   on("paper-submit", function () {
     if (!SUB.paper) return;
-    var y = SUB.paper.year, st = timerMap()["start-" + y] || 0;
+    var y = SUB.paper.year, st = A.timerGet(tkey(y) + "-start") || 0;
     var used = st ? Math.max(1, Math.round((Date.now() - st) / 60000)) : null;
     timerSet(y, 0);
     ST.paperReview = { used: used, at: Date.now() };
@@ -3951,7 +4059,7 @@ if (ST.cardOpen) {
     var back = SUB.retLesson, bp = SUB.retPaper;
     SUB.examone = -1; SUB.retLesson = null; SUB.retPaper = null;
     if (back) { openLesson(back); return; }
-    if (bp) { SUB.paper = { year: bp, i: SUB.retPaperIdx || 0 }; SUB.retPaperIdx = 0; render(); return; }
+    if (bp) { SUB.paper = { year: bp, i: SUB.retPaperIdx || 0, sch: ST.examSchool || "shu" }; SUB.retPaperIdx = 0; render(); return; }
     render();
   });
   on("grade-exam", function (el) {
@@ -4154,6 +4262,7 @@ if (ST.cardOpen) {
     if (t) { t.value = ""; setTimeout(function () { t.focus(); }, 120); }
   }
   on("ai-close", function () {
+    aiStop("close");
     var el = document.getElementById("aisheet");
     if (el) el.classList.remove("on");
     document.body.classList.remove("noscroll");
@@ -4165,7 +4274,17 @@ if (ST.cardOpen) {
   });
   on("ai-send", function () { sendAI(); });
 
+  /* AI 请求：同一时刻只允许一个，可取消，超时自动放弃（防连点多次扣费） */
+  var aiBusy = false, aiCtl = null, aiTimer = null;
+  function aiStop(reason) {
+    if (aiTimer) { clearTimeout(aiTimer); aiTimer = null; }
+    if (aiCtl) { try { aiCtl.abort(); } catch (e) { } aiCtl = null; }
+    aiBusy = false;
+  }
+  A.aiStop = aiStop;
+
   function sendAI() {
+    if (aiBusy) { A.toast("上一条还在回答，稍等一下（或先点「停止」）", "warn"); return; }
     var key = (document.getElementById("aikey") || {}).value || "";
     key = key.trim();
     if (!key) { A.toast("先填 API Key（platform.deepseek.com 申请）", "warn"); return; }
@@ -4190,8 +4309,14 @@ if (ST.cardOpen) {
       "最后提醒易错点。不要长篇大论，控制在 300 字内。公式用 $...$ 包裹。";
     var user = (ctxNow && ctxNow.text ? ctxNow.text + "\n\n" : "") + "我的问题：" + q;
 
+    aiBusy = true;
+    aiCtl = (typeof AbortController === "function") ? new AbortController() : null;
+    if (aiTimer) clearTimeout(aiTimer);
+    aiTimer = setTimeout(function () { aiStop("timeout"); }, 90000);
+
     fetch(base, {
       method: "POST",
+      signal: aiCtl ? aiCtl.signal : undefined,
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
       body: JSON.stringify({
         model: model,
@@ -4206,6 +4331,7 @@ if (ST.cardOpen) {
       function pump() {
         return reader.read().then(function (res) {
           if (res.done) {
+            aiStop();
             A.toast("回答完成", "ok");
             var key2 = ctxNow && (ctxNow.id || ctxNow.title);
             if (key2 && acc) {
@@ -4233,11 +4359,16 @@ if (ST.cardOpen) {
       }
       return pump();
     }).catch(function (err) {
+      aiStop();
       var msg = String(err && err.message || err || "");
+      if (/abort/i.test(msg)) {
+        outEl.innerHTML = '<div class="tiny muted">已停止。</div>';
+        return;
+      }
       var hint = "常见原因：Key 不对、网络不通（要能访问接口地址）、余额不足。";
       if (/401|403/.test(msg)) hint = "Key 不对或没有权限：去「我的 → AI 答疑」重新粘一次 Key。";
       else if (/429/.test(msg)) hint = "请求太频繁或额度用完：等一会儿再试，或去平台看余额。";
-      else if (/Failed to fetch|NetworkError|network/i.test(msg)) hint = "网络没通：确认手机能上网，或者这个接口地址被墙。";
+      else if (/Failed to fetch|NetworkError|network/i.test(msg)) hint = "连不上这个地址：可能是网络不通，也可能是该接口不允许浏览器直连（缺 CORS 头）。换 DeepSeek 官方地址 https://api.deepseek.com 试试。";
       outEl.innerHTML = '<div class="aibad">失败了：' + esc(msg) + "</div>" +
         '<div class="tiny muted">' + esc(hint) + "</div>" +
         '<div class="row"><button class="btn ghost sm" data-act="ai-send">再试一次</button></div>';
@@ -4356,6 +4487,18 @@ if (ST.cardOpen) {
   });
 
   /* ---------- 启动 ---------- */
+  /* 兜底：出错了给人一句话，而不是白屏 */
+  window.addEventListener("error", function (e) {
+    try {
+      var b = document.getElementById("boot");
+      if (b) b.textContent = "加载出错了：" + ((e && e.message) || "") + " · 刷新一下试试";
+      if (A.toast) A.toast("出了点问题：" + ((e && e.message) || "未知错误") + "（可刷新恢复）", "warn");
+    } catch (x) { }
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    try { if (A.toast) A.toast("后台请求失败：" + ((e && e.reason && (e.reason.message || e.reason)) || ""), "warn"); } catch (x) { }
+  });
+
   function boot() {
     var bootEl = document.getElementById("boot");
     if (bootEl) bootEl.parentNode.removeChild(bootEl);
@@ -4370,9 +4513,8 @@ if (ST.cardOpen) {
       try {
         var c = navigator.connection || {};
         if (c.saveData || /(^|-)2g$/i.test(c.effectiveType || "")) return;
-        if (typeof requestIdleCallback === "function") {
-          requestIdleCallback(function () { A.ensureLessons(null); }, { timeout: 8000 });
-        } else { A.ensureLessons(null); }
+        /* 首屏别抢带宽：进了讲义页再拉正文 */
+        if (currentView().id === "notes" || currentView().id === "lesson") A.ensureLessons(null);
       } catch (e) { }
     }, 4000);
     /* 数据只在本地：第一次来给个提醒 */

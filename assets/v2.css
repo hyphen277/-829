@@ -9,6 +9,8 @@
   --bad:#b8422f; --bad-soft:#fbeae6; --hot:#c4553f;
   --r:14px; --r2:10px; --sh:0 1px 2px rgba(20,20,20,.05),0 6px 18px rgba(20,20,20,.05);
   --safe-b:env(safe-area-inset-bottom,0px);
+  /* 语义别名：历史上被 var() 引用过但一直没定义 */
+  --muted:var(--ink3); --accent:var(--brand); --ac:var(--brand); --tx:var(--ink); --tx2:var(--ink2);
 }
 [data-theme="dark"]{
   --bg:#131315; --bg2:#1a1a1d; --card:#1e1e22; --ink:#ececee; --ink2:#a8a8b0;
@@ -547,7 +549,7 @@ mark.hl{background:color-mix(in srgb,var(--warn) 32%,transparent);color:inherit;
 .paperhead .tiny{margin-left:auto}
 .paperwrap{background:#fff;border:1px solid #e3e8ee;border-radius:10px;padding:6px;margin-bottom:10px}
 .paperwrap img{width:100%;height:auto;display:block;border-radius:6px;cursor:zoom-in}
-.paperbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 12px;position:sticky;bottom:78px;z-index:9;background:rgba(244,247,250,.92);backdrop-filter:blur(4px);border-radius:10px;padding:6px 8px}
+.paperbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 12px;position:sticky;bottom:78px;z-index:9;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(4px);border-radius:10px;padding:6px 8px}
 .paperno{font-size:12px;color:#5b6b7b}
 .paperbtn{margin-top:8px}
 .paperwrap{margin-bottom:88px}
@@ -587,9 +589,9 @@ mark.findhl{background:color-mix(in srgb,var(--accent) 30%,transparent);color:in
 .ansbox summary{cursor:pointer;font-size:12.5px;color:var(--ac);padding:6px 0}
 
 /* 自编题示意图 */
-.qfig{margin:10px 0 4px;padding:8px 6px 4px;border:1px solid #e3e8ee;border-radius:10px;background:#fff;display:flex;justify-content:center}
+.qfig{margin:10px 0 4px;padding:8px 6px 4px;border:1px solid var(--line);border-radius:10px;background:var(--card);display:flex;justify-content:center}
 .qfig svg{max-width:100%;height:auto}
-body.dark .qfig{background:#fff}
+[data-theme="dark"] .qfig{background:var(--card)}[data-theme="dark"] .qfig svg{filter:none}
 
 .goalline{padding:2px 2px 6px}
 
@@ -618,7 +620,7 @@ body.dark .qfig{background:#fff}
 .cdtip{margin-top:8px;font-size:12px;color:var(--ink2)}
 
 /* 考点公式条 */
-.kpf{background:#f7fafc;border:1px solid #e6edf3;border-radius:10px;padding:10px 12px;margin:8px 0}
+.kpf{background:var(--brand-soft);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0}
 .kpfrow{padding:6px 0;border-bottom:1px dashed #e6edf3}
 .kpfrow:last-child{border-bottom:0}
 .kpftex{font-size:15px;overflow-x:auto;overflow-y:hidden}
@@ -720,3 +722,12 @@ body.focus{padding-top:6px}
 .figdet>summary::-webkit-details-marker{display:none}
 .figdet>summary:before{content:"▸ ";color:#9aa7b4}
 .figdet[open]>summary:before{content:"▾ "}
+
+/* 子页顶栏：进去也要看得见「这是哪、怎么回去」 */
+.subtop{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:10px;margin:-4px -14px 10px;padding:9px 14px;
+  background:color-mix(in srgb,var(--bg) 94%,transparent);backdrop-filter:blur(6px);border-bottom:1px solid var(--line2)}
+.subtop b{font-size:14px;font-weight:600;color:var(--ink)}
+.subtop .link{font-size:13px;color:var(--brand);white-space:nowrap}
+.redobar{display:flex;align-items:center;gap:10px;margin:6px 0 2px;padding:6px 10px;border-radius:9px;background:var(--brand-soft)}
+.redobar .link{margin-left:auto;font-size:13px;color:var(--brand)}
+.cdover{color:var(--warn);text-decoration:underline;text-underline-offset:2px;font-size:12.5px}
