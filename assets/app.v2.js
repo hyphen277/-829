@@ -2063,11 +2063,11 @@ if (ST.cardOpen) {
         h += '<div class="rvrow' + (g === "no" || g === "fuzzy" ? " weak" : "") + '">' +
           '<span class="rvno">' + esc(p.no || "") + "</span>" + mark +
           '<span class="rvbtns">' +
-          '<button class="gbtn g-ok' + (g === "ok" ? " sel" : "") + '" data-act="grade-exam" data-v="' + p._i + '" data-g="ok">会</button>' +
-          '<button class="gbtn g-fu' + (g === "fuzzy" ? " sel" : "") + '" data-act="grade-exam" data-v="' + p._i + '" data-g="fuzzy">不熟</button>' +
-          '<button class="gbtn g-no' + (g === "no" ? " sel" : "") + '" data-act="grade-exam" data-v="' + p._i + '" data-g="no">不会</button>' +
+          '<button class="gbtn g-ok' + (g === "ok" ? " sel" : "") + '" data-act="grade-exam" data-id="' + esc(p.id) + '" data-g="ok">会</button>' +
+          '<button class="gbtn g-fu' + (g === "fuzzy" ? " sel" : "") + '" data-act="grade-exam" data-id="' + esc(p.id) + '" data-g="fuzzy">不熟</button>' +
+          '<button class="gbtn g-no' + (g === "no" ? " sel" : "") + '" data-act="grade-exam" data-id="' + esc(p.id) + '" data-g="no">不会</button>' +
           "</span>" +
-          '<button class="ibtn" data-act="review-open" data-v="' + p._i + '" title="看这道题">›</button></div>';
+          '<button class="ibtn" data-act="review-open" data-id="' + esc(p.id) + '" data-s="' + esc(p._school || sch.id) + '" title="看这道题">›</button></div>';
       });
       h += "</div>";
       h += '<div class="tiny muted" style="margin-top:8px">不熟和不会的题已经进了「重测」，明天会在首页提醒你再做一遍；想马上二刷就点每题右边的 ›。</div>';
@@ -2082,7 +2082,7 @@ if (ST.cardOpen) {
       h += '<div class="card"><div class="h4">这套卷子的题 <span class="tiny muted">' + probs.length + ' 道</span></div>' +
         '<div class="tiny muted">整套做完再逐题自评，也可以直接点某一题去看它对应的原卷位置。</div>';
       probs.forEach(function (p) {
-        h += '<button class="exrow" data-act="open-exam" data-s="' + esc(p._school || sch.id) + '" data-v="' + p._i + '">' +
+        h += '<button class="exrow" data-act="open-exam" data-s="' + esc(p._school || sch.id) + '" data-id="' + esc(p.id) + '">' +
           '<b>' + esc(p.no || "") + "</b>" +
           '<span class="exno">' + esc(p.part || "") + "</span>" +
           '<span class="exbrief tiny muted">' + esc(A.lead(A.plain(p.brief || ""), 20)) + "</span></button>";
@@ -2189,7 +2189,7 @@ if (ST.cardOpen) {
           (hot ? '<span class="tag hot">高频</span>' : "") +
           (done ? '<span class="tag ok">做过</span>' : "") +
           "</div></div>";
-        h += '<div class="exacts"><button class="link" data-act="open-exam" data-s="' + esc(p._school || "shu") + '" data-v="' + gi + '">原卷 ›</button></div>';
+        h += '<div class="exacts"><button class="link" data-act="open-exam" data-s="' + esc(p._school || "shu") + '" data-id="' + esc(p.id) + '">原卷 ›</button></div>';
         h += "</div>";
       });
       h += "</div></div>";
@@ -3282,6 +3282,24 @@ if (ST.cardOpen) {
   var SUB = A.SUBVIEW || (A.SUBVIEW = { lesson: null, formula: 0, examone: -1, examschool: "shu", fig: -1 });
 
   /* 当前筛选下的真题数组里取第 i 道（与列表顺序一致） */
+  /* 题目 id → 当前筛选列表里的下标；不在筛选里就把年份筛掉再找，最后退回全校列表 */
+  function examRefById(id, school) {
+    if (!id) return null;
+    var lst = (A.shownExam && A.shownExam()) || [];
+    for (var k = 0; k < lst.length; k++) if (lst[k].id === id) return { p: lst[k], i: k };
+    var sch = A.schoolOf(school || ST.examSchool || "shu");
+    var all = sch.list || [];
+    for (var j = 0; j < all.length; j++) {
+      if (all[j].id !== id) continue;
+      ST.examYear = 0;
+      var l2 = (A.shownExam && A.shownExam()) || [];
+      for (var m = 0; m < l2.length; m++) if (l2[m].id === id) return { p: l2[m], i: m };
+      return { p: all[j], i: j };
+    }
+    return null;
+  }
+  A.examRefById = examRefById;
+
   function examAt(i) {
     var lst = (A.shownExam && A.shownExam()) || [];
     if (!lst.length) lst = A.schoolOf(SUB.examschool || ST.examSchool || "shu").list || [];
@@ -3914,8 +3932,16 @@ if (ST.cardOpen) {
     SUB.retPaperIdx = SUB.paper ? SUB.paper.i : 0;
     SUB.paper = null;
     SUB.lesson = null; SUB.formula = 0;
-    SUB.examone = parseInt(el.getAttribute("data-v"), 10);
-    SUB.examschool = el.getAttribute("data-s") || ST.examSchool || "shu";
+    var id0 = el.getAttribute("data-id");
+    var s0 = el.getAttribute("data-s") || ST.examSchool || "shu";
+    if (id0) {
+      var ref = examRefById(id0, s0);
+      if (!ref) { A.toast("没找到这道题，回真题列表看看", "bad"); return; }
+      SUB.examone = ref.i;
+    } else {
+      SUB.examone = parseInt(el.getAttribute("data-v"), 10);
+    }
+    SUB.examschool = s0;
     ST.examSchool = SUB.examschool;
     render();
     window.scrollTo(0, 0);
@@ -3987,9 +4013,10 @@ if (ST.cardOpen) {
     A.toast(used ? "已交卷，用时 " + used + " 分钟" : "已交卷（没开计时，用时未知）", "ok");
   });
   on("review-open", function (el) {
-    var i = parseInt(el.getAttribute("data-v"), 10);
     var s = el.getAttribute("data-s") || ST.examSchool || "shu";
-    var p = examAt(i);
+    var ref0 = examRefById(el.getAttribute("data-id"), s);
+    var i = ref0 ? ref0.i : parseInt(el.getAttribute("data-v"), 10);
+    var p = ref0 ? ref0.p : examAt(i);
     if (!p) return;
     ST.paperReview = null;
     SUB.paper = null;
@@ -4063,9 +4090,10 @@ if (ST.cardOpen) {
     render();
   });
   on("grade-exam", function (el) {
-    var i = parseInt(el.getAttribute("data-v"), 10);
     var g = el.getAttribute("data-g");
-    var p = examAt(i);
+    var refG = examRefById(el.getAttribute("data-id"), ST.examSchool || "shu");
+    var i = refG ? refG.i : parseInt(el.getAttribute("data-v"), 10);
+    var p = refG ? refG.p : examAt(i);
     if (!p) return;
     A.recordExam(p.id, g);
     var r = (g === "ok" ? "右侧 " : "") + (g === "ok" ? "会" : g === "fuzzy" ? "不熟" : "不会");
