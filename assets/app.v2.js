@@ -1489,6 +1489,40 @@
       '<button class="link" data-act="figfull">看整页 ›</button></div></div>';
   }
   A.figCrop = figCrop;
+
+  /* 把「这道题那一段」裁成 JPEG dataURL，给视觉模型看（同源图片，canvas 不会被污染） */
+  var figCache = {};
+  function figDataURL(qid, cb) {
+    if (!qid || !cb) return;
+    if (figCache[qid] !== undefined) { cb(figCache[qid]); return; }
+    var meta = (A.EXMAP || {})[qid];
+    if (!meta || !meta.p) { figCache[qid] = null; cb(null); return; }
+    var src = pagesOf(meta.p)[0];
+    if (!src) { figCache[qid] = null; cb(null); return; }
+    var img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = function () {
+      try {
+        var c = (window.QCROP || {})[qid];
+        var W = img.naturalWidth, H = img.naturalHeight;
+        var y0 = 0, y1 = 1;
+        if (c && c.length >= 2 && c[1] - c[0] > 0.02) { y0 = Math.max(0, c[0] - 0.012); y1 = Math.min(1, c[1] + 0.012); }
+        var sh = Math.max(40, Math.round((y1 - y0) * H));
+        var outW = Math.min(1000, W), scale = outW / W, outH = Math.max(1, Math.round(sh * scale));
+        var cv = document.createElement("canvas");
+        cv.width = outW; cv.height = outH;
+        var g = cv.getContext("2d");
+        g.fillStyle = "#fff"; g.fillRect(0, 0, outW, outH);
+        g.drawImage(img, 0, Math.round(y0 * H), W, sh, 0, 0, outW, outH);
+        var url = cv.toDataURL("image/jpeg", 0.82);
+        if (url.length > 1400000) url = cv.toDataURL("image/jpeg", 0.6);
+        figCache[qid] = url; cb(url);
+      } catch (e) { figCache[qid] = null; cb(null); }
+    };
+    img.onerror = function () { figCache[qid] = null; cb(null); };
+    img.src = src;
+  }
+  A.figDataURL = figDataURL;
   function pagesOf(p) {
     /* 一道真题可能跨页：page 之后就近取，最多 2 页 */
     if (!p) return [];
@@ -4250,7 +4284,9 @@ if (ST.cardOpen) {
         '<details class="aiadv"><summary class="tiny">换模型 / 换接口（可选）</summary>' +
         '<input id="aibase" class="aikey" placeholder="接口地址，默认 https://api.deepseek.com">' +
         '<input id="aimodel" class="aikey" placeholder="模型，默认 deepseek-chat">' +
-        '<div class="tiny muted">可填任何 OpenAI 兼容接口（如硅基流动、智谱、通义）。</div></details>' +
+        '<div class="tiny muted">可填任何 OpenAI 兼容接口（如硅基流动、智谱、通义）。</div>' +
+        '<label class="aivrow"><input type="checkbox" id="aivision"> 让 AI 看原卷图（需读图模型，如 qwen-vl-max / glm-4v / gpt-4o-mini）</label>' +
+        '<div class="tiny muted" id="aivhint"></div></details>' +
         '<div class="row"><button class="btn primary block" data-act="ai-send">发送</button></div>' +
         '<div id="aiout" class="aiout"></div>' +
         '<div class="tiny muted">Key 只写进本机 localStorage，不会发给别人。没有 Key 也能做题。</div>' +
@@ -4281,6 +4317,24 @@ if (ST.cardOpen) {
     if (b) b.value = (localStorage.getItem("kaoyan829.v2.aibase") || "");
     var m = document.getElementById("aimodel");
     if (m) m.value = (localStorage.getItem("kaoyan829.v2.aimodel") || "");
+    var vc = document.getElementById("aivision");
+    var vOn = (function () { try { return localStorage.getItem("kaoyan829.v2.aivision") === "1"; } catch (e) { return false; } })();
+    if (vc) vc.checked = vOn;
+    /* 预先把这道题的裁图准备好，真按发送时就不卡 */
+    AI_IMG = null;
+    var hint = document.getElementById("aivhint");
+    if (ctx && ctx.id && A.figDataURL) {
+      A.figDataURL(ctx.id, function (url) {
+        AI_IMG = url || null;
+        var hi = document.getElementById("aivhint");
+        if (!hi) return;
+        hi.textContent = url ? "✓ 已准备好这道题的原卷图（约 " + Math.round(url.length / 1365) + " KB）"
+          : "这道题没有原卷图可发（自编练习题没有扫描件）。";
+      });
+      if (hint) hint.textContent = "正在准备原卷图…";
+    } else if (hint) {
+      hint.textContent = "只有真题有原卷图；自编练习题没有。";
+    }
     var out0 = document.getElementById("aiout");
     var past = ctx && A.DB.ai ? A.DB.ai[ctx.id || ctx.title] : null;
     out0.innerHTML = past
@@ -4303,7 +4357,7 @@ if (ST.cardOpen) {
   on("ai-send", function () { sendAI(); });
 
   /* AI 请求：同一时刻只允许一个，可取消，超时自动放弃（防连点多次扣费） */
-  var aiBusy = false, aiCtl = null, aiTimer = null;
+  var aiBusy = false, aiCtl = null, aiTimer = null, AI_IMG = null;
   function aiStop(reason) {
     if (aiTimer) { clearTimeout(aiTimer); aiTimer = null; }
     if (aiCtl) { try { aiCtl.abort(); } catch (e) { } aiCtl = null; }
@@ -4336,6 +4390,25 @@ if (ST.cardOpen) {
     var sys = "你是考研电路与信号系统的辅导老师。用最直白的中文解释，先讲这一步在干什么，再讲为什么这么做，" +
       "最后提醒易错点。不要长篇大论，控制在 300 字内。公式用 $...$ 包裹。";
     var user = (ctxNow && ctxNow.text ? ctxNow.text + "\n\n" : "") + "我的问题：" + q;
+    /* 看图模式：把原卷那段图一起发过去 */
+    var visionOn = false;
+    var vbox = document.getElementById("aivision");
+    if (vbox) visionOn = !!vbox.checked;
+    try { localStorage.setItem("kaoyan829.v2.aivision", visionOn ? "1" : "0"); } catch (e) { }
+    var visionModel = !/deepseek/i.test(model);
+    var userContent = user;
+    if (visionOn) {
+      if (!AI_IMG) {
+        A.toast("这道题没有原卷图可发，已改成只发文字", "warn");
+      } else if (!visionModel) {
+        A.toast("deepseek-chat 不支持读图，请在「换模型」里填 qwen-vl-max / glm-4v 之类", "warn");
+      } else {
+        userContent = [
+          { type: "text", text: user },
+          { type: "image_url", image_url: { url: AI_IMG } }
+        ];
+      }
+    }
 
     aiBusy = true;
     aiCtl = (typeof AbortController === "function") ? new AbortController() : null;
@@ -4348,7 +4421,7 @@ if (ST.cardOpen) {
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
       body: JSON.stringify({
         model: model,
-        messages: [{ role: "system", content: sys }, { role: "user", content: user }],
+        messages: [{ role: "system", content: sys }, { role: "user", content: userContent }],
         temperature: 0.4, max_tokens: 900, stream: true
       })
     }).then(function (r) {
